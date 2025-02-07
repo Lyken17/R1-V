@@ -11,5 +11,5 @@ pip install tensorboardx
 pip install qwen_vl_utils torchvision
 pip install flash-attn --no-build-isolation
 
-pip3 install git+https://github.com/huggingface/transformers.git # correct deepspeed support
+pip install git+https://github.com/huggingface/transformers.git # correct deepspeed support
 
