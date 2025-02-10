@@ -1,3 +1,10 @@
+# 内部分支使用说明
+- [使用文档](https://iwiki.woa.com/p/4013620298)
+- [实验记录（待更新）](https://iwiki.woa.com/p/4013620373)
+
+----
+（以下是官方repo的README）
+
 # R1-V: Reinforcing Super Generalization Ability in Vision Language Models with Less Than $3
 
 ![image](https://github.com/user-attachments/assets/c52a448f-d666-4ca6-958b-86267d56de0e) 
