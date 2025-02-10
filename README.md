@@ -64,6 +64,10 @@
 bash setup.sh
 ```
 
+### Supported Models
+
+1. Qwen2-VL
+2. Qwen2.5-VL
 
 ## Training
 
@@ -80,8 +84,8 @@ torchrun --nproc_per_node="8" \
     --master_port="12345" \
     src/open_r1/grpo.py \
     --output_dir <OUTPUT_DIR> \
-    --model_name_or_path <PATH-TO-Qwen2-VL-2B-Instruct> \
-    --dataset_name <PATH-TO-DATASET-In-Repo> \  #https://huggingface.co/datasets/leonardPKU/clevr_cogen_a_train
+    --model_name_or_path <PATH-TO-Qwen2-VL-2B-Instruct> \ # Currently supported models: Qwen2-VL, Qwen2.5-VL
+    --dataset_name leonardPKU/clevr_cogen_a_train \  #https://huggingface.co/datasets/leonardPKU/clevr_cogen_a_train
     --max_prompt_length 1024 \
     --per_device_train_batch_size 1 \
     --gradient_accumulation_steps 2 \
@@ -94,17 +98,20 @@ torchrun --nproc_per_node="8" \
     --num_train_epochs 2 \
     --run_name Qwen2-VL-2B-GRPO-CLEVR-70k \
     --save_steps 100 \
-    --save_only_model true
+    --save_only_model true \
+    --num_generations 8   # number of outputs G in grpo, reduce it would lead to faster training and smaller memory cost but higher variance  
 
 ```
 
 > [!NOTE] 
 > 1. To reproduce the result, keep the per_device_train_batch_size to 1 for now, as there is a revealed bug about batched training. See the [reproduction report](https://github.com/Deep-Agent/R1-V/issues/4#issuecomment-2633348354) here. We realize it is important for effiency and are working on solving it with the community.
-> 2. If you meet OOM Error, add `--deepspeed local_scripts/zero3.json` following https://github.com/Deep-Agent/R1-V/issues/18
+> 2. If you meet **OOM Error**, add `--deepspeed local_scripts/zero3.json` following https://github.com/Deep-Agent/R1-V/issues/18 or you can reduce `--num_generations`
 
 ## Evaluation
 
-![image](https://github.com/user-attachments/assets/70a3cb1a-4588-48aa-9469-011fbd776be3)
+
+
+![image](https://github.com/user-attachments/assets/4f48233c-0546-432f-94e6-723f91fbd086)
 
 We provide the example script to evaluate OOD counting performance on a subset of SuperCLEVR within 1 minute. You can also modify the script and dataset to test on your own dataset.
 
