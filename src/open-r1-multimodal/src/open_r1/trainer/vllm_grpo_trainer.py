@@ -41,14 +41,14 @@ from transformers import (
     is_wandb_available,
 )
 from transformers.integrations.deepspeed import is_deepspeed_zero3_enabled
-from transformers.utils import is_peft_available 
+from transformers.utils import is_peft_available
 
 from trl.data_utils import (
     apply_chat_template,
     is_conversational,
     maybe_apply_chat_template,
 )
-from trl.import_utils import is_vllm_available 
+from trl.import_utils import is_vllm_available
 
 from trl.models import (
     create_reference_model,
@@ -65,16 +65,52 @@ if is_peft_available():
     from peft import PeftConfig, get_peft_model
 
 if is_vllm_available():
-    from vllm import LLM, SamplingParams 
+    from vllm import LLM, SamplingParams
 
 
 if is_wandb_available():
     import wandb
 import torch.nn as nn
+from torch.utils.data import Sampler
 
 # What we call a reward function is a callable that takes a list of prompts and completions and returns a list of
 # rewards. When it's a string, it's a model ID, so it's loaded as a pretrained model.
 RewardFunc = Union[str, PreTrainedModel, Callable[[list, list], list[float]]]
+
+
+class RepeatRandomSampler(Sampler):
+    """
+    Sampler that repeats the indices of a dataset N times.
+
+    Args:
+        data_source (`Sized`):
+            Dataset to sample from.
+        repeat_count (`int`):
+            Number of times to repeat each index.
+
+    Example:
+    ```python
+    >>> sampler = RepeatRandomSampler(["a", "b", "c", "d"], repeat_count=2)
+    >>> list(sampler)
+    [2, 2, 0, 0, 3, 3, 1, 1]
+    ```
+    """
+
+    def __init__(self, data_source, repeat_count: int):
+        self.data_source = data_source
+        self.repeat_count = repeat_count
+        self.num_samples = len(data_source)
+
+    def __iter__(self):
+        indexes = [
+            idx
+            for idx in torch.randperm(self.num_samples).tolist()
+            for _ in range(self.repeat_count)
+        ]
+        return iter(indexes)
+
+    def __len__(self):
+        return self.num_samples * self.repeat_count
 
 
 class Qwen2VLGRPOVLLMTrainer(Trainer):
@@ -263,6 +299,7 @@ class Qwen2VLGRPOVLLMTrainer(Trainer):
 
         # Initialize the metrics
         self._metrics = defaultdict(list)
+        self.use_vllm = args.use_vllm
 
         # rewrite the processing AutoTokenizer -> AutoProcessor
         model_id = model if isinstance(model, str) else model.config._name_or_path
@@ -324,7 +361,7 @@ class Qwen2VLGRPOVLLMTrainer(Trainer):
                     f"eval batch size, the valid values for the number of generations are: {possible_values}."
                 )
 
-        if args.use_vllm:
+        if self.use_vllm:
             if not is_vllm_available():
                 raise ImportError(
                     "vLLM is not available and `use_vllm` is set to True. Please install vLLM with "
@@ -365,16 +402,18 @@ class Qwen2VLGRPOVLLMTrainer(Trainer):
                     return_value=None,
                 )
                 with world_size_patch, profiling_patch:
+                    print("vllm_device: ", vllm_device)
                     self.llm = LLM(
                         model=model.name_or_path,
                         device=vllm_device,
                         gpu_memory_utilization=self.args.vllm_gpu_memory_utilization,
-                        dtype=self.args.vllm_dtype,
+                        dtype=torch.bfloat16,
                         # Automatic Prefix Caching caches the KV cache of existing queries, so that a new query can
                         # directly reuse the KV cache if it shares the same prefix with one of the existing queries.
                         # This is particularly useful here because we generate completions from the same prompts.
                         enable_prefix_caching=True,
-                        max_model_len=self.args.vllm_max_model_len,
+                        enforce_eager=True,
+                        max_model_len=2048,
                     )
                 self.sampling_params = SamplingParams(
                     temperature=args.temperature,
@@ -416,6 +455,10 @@ class Qwen2VLGRPOVLLMTrainer(Trainer):
         if self._signature_columns is None:
             self._signature_columns = ["prompt"]
 
+    # We need a custom sampler that samples the same prompt multiple times
+    def _get_train_sampler(self):
+        return RepeatRandomSampler(self.train_dataset, self.num_generations)
+
     # Get the per-token log probabilities for the completions for the model and the reference model
     def _get_per_token_logps(
         self,
@@ -426,6 +469,8 @@ class Qwen2VLGRPOVLLMTrainer(Trainer):
         image_grid_thw,
         logits_to_keep,
     ):
+        pixel_values = pixel_values.to(model.device)
+        image_grid_thw = image_grid_thw.to(device=model.device)
         logits = model(
             input_ids,
             attention_mask=attention_mask,
@@ -471,8 +516,8 @@ class Qwen2VLGRPOVLLMTrainer(Trainer):
             add_special_tokens=False,
         )
         prompt_ids, prompt_mask = (
-            prompt_inputs["input_ids"],
-            prompt_inputs["attention_mask"],
+            prompt_inputs["input_ids"].to(device),
+            prompt_inputs["attention_mask"].to(device),
         )
         if self.max_prompt_length is not None:
             prompt_ids = prompt_ids[:, -self.max_prompt_length :]
@@ -484,7 +529,7 @@ class Qwen2VLGRPOVLLMTrainer(Trainer):
                 with unwrap_model_for_generation(
                     self.model,
                     self.accelerator,
-                    gather_deepspeed3_params=self.args.ds3_gather_for_generation,
+                    gather_deepspeed3_params=False,  # TODO: fix this, self.args.ds3_gather_for_generation,
                 ) as unwrapped_model:
                     if is_compiled_module(unwrapped_model):
                         state_dict = unwrapped_model._orig_mod.state_dict()
@@ -552,12 +597,18 @@ class Qwen2VLGRPOVLLMTrainer(Trainer):
 
         # Concatenate prompt_mask with completion_mask for logit computation
         attention_mask = torch.cat([prompt_mask, completion_mask], dim=1)  # (B*G, P+C)
-        pixel_values = prompt_inputs["pixel_values"].repeat_interleave(
-            self.num_generations, dim=0
-        )
-        image_grid_thw = prompt_inputs["image_grid_thw"].repeat_interleave(
-            self.num_generations, dim=0
-        )
+        # pixel_values = prompt_inputs["pixel_values"].repeat_interleave(
+        #     self.num_generations, dim=0
+        # )
+
+        pixel_values = prompt_inputs["pixel_values"]
+        # [None].repeat_interleave(self.num_generations, dim=0)
+        # pixel_values = pixel_values.view(-1, pixel_values.shape[-1])
+
+        image_grid_thw = prompt_inputs["image_grid_thw"]
+        # .repeat_interleave(
+        #     self.num_generations, dim=0
+        # )
         logits_to_keep = completion_ids.size(1)
 
         with torch.inference_mode():
@@ -685,6 +736,71 @@ class Qwen2VLGRPOVLLMTrainer(Trainer):
             "completion_mask": completion_mask,
             "ref_per_token_logps": ref_per_token_logps,
             "advantages": advantages,
+            "pixel_values": pixel_values,
+            "image_grid_thw": image_grid_thw,
         }
 
-    # other function as such compute_loss is the same with the original GRPOTrainer
+    def compute_loss(
+        self, model, inputs, return_outputs=False, num_items_in_batch=None
+    ):
+        if return_outputs:
+            raise ValueError("The GRPOTrainer does not support returning outputs")
+        # Compute the per-token log probabilities for the model
+
+        prompt_ids, prompt_mask = inputs["prompt_ids"], inputs["prompt_mask"]
+        completion_ids, completion_mask = (
+            inputs["completion_ids"],
+            inputs["completion_mask"],
+        )
+        input_ids = torch.cat([prompt_ids, completion_ids], dim=1)
+        attention_mask = torch.cat([prompt_mask, completion_mask], dim=1)
+        pixel_values = inputs["pixel_values"]
+        image_grid_thw = inputs["image_grid_thw"]
+        logits_to_keep = completion_ids.size(
+            1
+        )  # we only need to compute the logits for the completion tokens
+
+        per_token_logps = self._get_per_token_logps(
+            model,
+            input_ids,
+            attention_mask,
+            pixel_values,
+            image_grid_thw,
+            logits_to_keep,
+        )
+
+        # Compute the KL divergence between the model and the reference model
+        ref_per_token_logps = inputs["ref_per_token_logps"]
+        per_token_kl = (
+            torch.exp(ref_per_token_logps - per_token_logps)
+            - (ref_per_token_logps - per_token_logps)
+            - 1
+        )
+
+        # x - x.detach() allows for preserving gradients from x
+        advantages = inputs["advantages"]
+        per_token_loss = torch.exp(
+            per_token_logps - per_token_logps.detach()
+        ) * advantages.unsqueeze(1)
+        per_token_loss = -(per_token_loss - self.beta * per_token_kl)
+        loss = (
+            (per_token_loss * completion_mask).sum(dim=1) / completion_mask.sum(dim=1)
+        ).mean()
+
+        # Log the metrics
+        completion_length = (
+            self.accelerator.gather_for_metrics(completion_mask.sum(1))
+            .float()
+            .mean()
+            .item()
+        )
+        self._metrics["completion_length"].append(completion_length)
+
+        mean_kl = (
+            (per_token_kl * completion_mask).sum(dim=1) / completion_mask.sum(dim=1)
+        ).mean()
+        self._metrics["kl"].append(
+            self.accelerator.gather_for_metrics(mean_kl).mean().item()
+        )
+
+        return loss

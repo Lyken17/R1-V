@@ -90,14 +90,14 @@ else
 fi
 
 # ==== 设置输出路径 ==== #
-RUN_NAME="qwen2_vl_2b_grpo_clevr_70k_gy_lr1e-6_bs1_ga2_ep2"
+RUN_NAME="qwen_2_vl_7b_grpo_clevr_70k_gy_lr1e-6_bs1_ga2_ep1_zero1_optim_test"
 OUTPUT_DIR="/apdcephfs_cq8/share_1611098/ruanzheng/code/src/R1-V/output/${RUN_NAME}"
 if [ ! -d "$OUTPUT_DIR" ]; then
  mkdir -p "$OUTPUT_DIR"
 fi
 # ==== 选择模型、数据集和deepspeed配置 ==== #
 MODEL_NAME="/apdcephfs_gy2/share_302735770/stephenruan/code/src/Qwen2-VL-2B-Instruct"
-# MODEL_NAME="/apdcephfs_sh8/share_301266059/stephenruan/code/src/Qwen2-VL-7B-Instruct"
+# MODEL_NAME="/apdcephfs_gy2/share_302735770/stephenruan/code/src/Qwen2.5-VL-7B-Instruct"
 DATASET_NAME="/apdcephfs_gy2/share_302735770/stephenruan/data/leonardPKU___clevr_cogen_a_train"
 DS_CONFIG="/apdcephfs_cq8/share_1611098/ruanzheng/code/src/R1-V/src/open-r1-multimodal/local_scripts/zero1.json"
 export DEBUG_MODE="true" # Enable Debug if you want to see the rollout of model during RL
@@ -118,10 +118,11 @@ deepspeed \
     --gradient_accumulation_steps ${GRADIENT_ACC} \
     --logging_steps 1 \
     --bf16 True \
-    --gradient_checkpointing false \
+    --gradient_checkpointing true \
     --attn_implementation flash_attention_2 \
     --max_pixels 401408 \
     --num_train_epochs 2 \
+    --num_generations 8 \
     --run_name ${RUN_NAME} \
     --save_steps 100 \
     --save_total_limit 3 \
