@@ -1,8 +1,18 @@
+#!/bin/bash
+
+# The latest vllm==0.7.2 is required for this script: pip3 install vllm==0.7.2 
+
+
 export DEBUG_MODE="true"
-export LOG_PATH="./debug_log_2b_rerun.txt"
-QWEN_PATH="/home/lilei/Qwen2-VL-2B-Instruct"
-HF_DATASET="/home/lilei/Clevr_CoGenT_TrainA_70K" 
-OUTPUT_DIR="/home/lilei/R1-V/checkpoints/Qwen2-VL-2B-GRPO-R1-70K" 
+export LOG_PATH="./vllm_run.txt"
+
+QWEN_PATH="PATH_TO_QWEN_2B_CKPT"
+HF_DATASET="MMInstruction/Clevr_CoGenT_TrainA_70K" 
+OUTPUT_DIR="OUTPUT_DIR" 
+RUN_NAME="RUN_NAME_FOR_WANDB"
+
+# NOTE: you are expected to use X + 1 cards for X training proc and 1 vLLM proc 
+# e.g., the visible devices should be 0,1,2,3,4 for 5 cards, and  --nproc_per_node="4"
 
 CUDA_VISIBLE_DEVICES="0,1,2,3,4" torchrun --nproc_per_node="4" \
     --nnodes="1" \
@@ -26,6 +36,6 @@ CUDA_VISIBLE_DEVICES="0,1,2,3,4" torchrun --nproc_per_node="4" \
     --attn_implementation flash_attention_2 \
     --max_pixels 400000 \
     --max_steps 13125 \
-    --run_name Qwen2-VL-2B-GRPO-R1-70K-5GPUs-nG4-maxNew1K-3epoch \
+    --run_name $RUN_NAME \
     --save_steps 1000 \
     --save_only_model true
