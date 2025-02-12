@@ -13,3 +13,6 @@ pip install flash-attn --no-build-isolation
 
 pip install git+https://github.com/huggingface/transformers.git # correct deepspeed support
 
+# vLLM support
+pip install vllm==0.7.2
+
