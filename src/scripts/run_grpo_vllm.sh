@@ -7,7 +7,7 @@ export DEBUG_MODE="true"
 export LOG_PATH="./vllm_run.txt"
 
 QWEN_PATH="PATH_TO_QWEN_2B_CKPT"
-HF_DATASET="MMInstruction/Clevr_CoGenT_TrainA_70K" 
+HF_DATASET="MMInstruction/Clevr_CoGenT_TrainA_70K_Complex" 
 OUTPUT_DIR="OUTPUT_DIR" 
 RUN_NAME="RUN_NAME_FOR_WANDB"
 
