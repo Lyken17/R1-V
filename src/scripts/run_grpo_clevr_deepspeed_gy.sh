@@ -90,18 +90,18 @@ else
 fi
 
 # ==== 设置输出路径 ==== #
-RUN_NAME="qwen_2_vl_7b_grpo_clevr_70k_gy_lr1e-6_bs1_ga2_ep1_zero1_optim_test"
+RUN_NAME="qwen_2_vl_2b_grpo_clevr_70k_gy_lr1e-6_bs1_ga2_ep1_zero1_optim_test"
 OUTPUT_DIR="/apdcephfs_cq8/share_1611098/ruanzheng/code/src/R1-V/output/${RUN_NAME}"
 if [ ! -d "$OUTPUT_DIR" ]; then
- mkdir -p "$OUTPUT_DIR"
+ mkdir -p "$OUTPUT_DIR
 fi
 # ==== 选择模型、数据集和deepspeed配置 ==== #
 MODEL_NAME="/apdcephfs_gy2/share_302735770/stephenruan/code/src/Qwen2-VL-2B-Instruct"
 # MODEL_NAME="/apdcephfs_gy2/share_302735770/stephenruan/code/src/Qwen2.5-VL-7B-Instruct"
 DATASET_NAME="/apdcephfs_gy2/share_302735770/stephenruan/data/leonardPKU___clevr_cogen_a_train"
-DS_CONFIG="/apdcephfs_cq8/share_1611098/ruanzheng/code/src/R1-V/src/open-r1-multimodal/local_scripts/zero1.json"
+DS_CONFIG="/apdcephfs_cq8/share_1611098/ruanzheng/code/src/R1-V/src/open-r1-multimodal/local_scripts/zero_stage1_config.json"
 export DEBUG_MODE="true" # Enable Debug if you want to see the rollout of model during RL
-export LOG_PATH="${OUTPUT_DIR}/debug_log_2b.txt"
+export LOG_PATH="${OUTPUT_DIR}/debug_log_${MODEL_NAME}.txt"
 
 deepspeed \
     --hostfile ${HOSTFILE} \

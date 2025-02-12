@@ -1,3 +1,4 @@
+
 work_dir=/apdcephfs_cq8/share_1611098/ruanzheng/code/src/R1-V/src/open-r1-multimodal
 cd $work_dir
 
@@ -10,7 +11,7 @@ export PYTHONPATH="${PYTHONPATH}:$(pwd)"
 # export PYTHONPATH=src:$PYTHONPATH
 
 # ==== 设置输出路径 ==== #
-RUN_NAME="qwen_2_vl_2b_vllm_grpo_clevr_70k_gy_lr1e-6_bs1_ga2_ep2_torchrun"
+RUN_NAME="qwen_2_vl_2b_grpo_clevr_70k_gy_lr1e-6_bs1_ga2_ep2_torchrun"
 OUTPUT_DIR="/apdcephfs_cq8/share_1611098/ruanzheng/code/src/R1-V/output/${RUN_NAME}"
 if [ ! -d "$OUTPUT_DIR" ]; then
  mkdir -p "$OUTPUT_DIR"
@@ -25,7 +26,7 @@ export LOG_PATH="${OUTPUT_DIR}/debug_log_2b.txt"
 
 
 torchrun \
-    --nproc_per_node="6" \
+    --nproc_per_node="8" \
     --nnodes="1" \
     --node_rank="0" \
     --master_addr="127.0.0.1" \
@@ -49,8 +50,5 @@ torchrun \
     --save_total_limit 3 \
     --save_only_model true \
     --report_to tensorboard \
-    --use_vllm true \
-    --num_generations 6 \
     --deepspeed ${DS_CONFIG} \
-    --vllm_device "cuda:6" \
     2>&1 | tee "${OUTPUT_DIR}/training_log.txt"

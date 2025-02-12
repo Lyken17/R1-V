@@ -804,3 +804,12 @@ class Qwen2VLGRPOVLLMTrainer(Trainer):
         )
 
         return loss
+    
+    def log(self, logs: dict[str, float], start_time: Optional[float] = None) -> None:
+        metrics = {key: sum(val) / len(val) for key, val in self._metrics.items()}  # average the metrics
+        logs = {**logs, **metrics}
+        if version.parse(transformers.__version__) >= version.parse("4.47.0.dev0"):
+            super().log(logs, start_time)
+        else:  # transformers<=4.46
+            super().log(logs)
+        self._metrics.clear()

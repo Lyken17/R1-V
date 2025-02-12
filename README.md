@@ -1,6 +1,9 @@
 # 内部分支使用说明
+- 基础环境镜像：mirrors.tencent.com/timurhe-ns/hunyuan-cuda12.2-torch2.5.1-flashattn2.7.4.post1-vllm0.7.1-python3.12.2-gcc12:latest
 - [使用文档](https://iwiki.woa.com/p/4013620298)
 - [实验记录（待更新）](https://iwiki.woa.com/p/4013620373)
+
+vllm启动脚本：src/scripts/run_vllm_grpo_clevr_torchrun_gy.sh
 
 ----
 （以下是官方repo的README）
