@@ -27,7 +27,7 @@ lr_scheduler_type: cosine
 packing: true
 max_seq_length: 4096
 max_steps: -1
-num_train_epochs: 3
+num_train_epochs: 1
 output_dir: data/Qwen2-VL-2B-Instruct-SFT
 overwrite_output_dir: true
 per_device_eval_batch_size: 4
