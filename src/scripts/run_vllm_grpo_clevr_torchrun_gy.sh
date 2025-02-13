@@ -25,7 +25,7 @@ export LOG_PATH="${OUTPUT_DIR}/debug_log_2b.txt"
 
 
 torchrun \
-    --nproc_per_node="6" \
+    --nproc_per_node="7" \
     --nnodes="1" \
     --node_rank="0" \
     --master_addr="127.0.0.1" \
@@ -50,6 +50,6 @@ torchrun \
     --save_only_model true \
     --report_to tensorboard \
     --use_vllm true \
-    --num_generations 6 \
-    --vllm_device "cuda:6" \
+    --num_generations 8 \
+    --vllm_device "cuda:7" \
     2>&1 | tee "${OUTPUT_DIR}/training_log.txt"

@@ -36,6 +36,7 @@ from transformers import (
     PreTrainedModel,
     PreTrainedTokenizerBase,
     Qwen2VLForConditionalGeneration,
+    Qwen2_5_VLForConditionalGeneration,
     Trainer,
     TrainerCallback,
     is_wandb_available,
@@ -298,26 +299,6 @@ class Qwen2VLGRPOVLLMTrainerModified(Trainer):
         # model accepts loss-related kwargs. Since we compute our own loss, this check is irrelevant. We set
         # self.model_accepts_loss_kwargs to False to enable scaling.
         self.model_accepts_loss_kwargs = False
-        # Check if the per_device_train/eval_batch_size * num processes can be divided by the number of generations
-        num_processes = self.accelerator.num_processes
-        global_batch_size = args.per_device_train_batch_size * num_processes
-        possible_values = [n_gen for n_gen in range(2, global_batch_size + 1) if (global_batch_size) % n_gen == 0]
-
-        if self.num_generations not in possible_values:
-            raise ValueError(
-                f"The global train batch size ({num_processes} x {args.per_device_train_batch_size}) must be evenly "
-                f"divisible by the number of generations per prompt ({self.num_generations}). Given the current train "
-                f"batch size, the valid values for the number of generations are: {possible_values}."
-            )
-        if self.args.eval_strategy != "no":
-            global_batch_size = args.per_device_eval_batch_size * num_processes
-            possible_values = [n_gen for n_gen in range(2, global_batch_size + 1) if (global_batch_size) % n_gen == 0]
-            if self.num_generations not in possible_values:
-                raise ValueError(
-                    f"The global eval batch size ({num_processes} x {args.per_device_eval_batch_size}) must be evenly "
-                    f"divisible by the number of generations per prompt ({self.num_generations}). Given the current "
-                    f"eval batch size, the valid values for the number of generations are: {possible_values}."
-                )
 
         if self.use_vllm:
             if not is_vllm_available():
