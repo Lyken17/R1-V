@@ -15,3 +15,4 @@ pip install git+https://github.com/huggingface/transformers.git # correct deepsp
 
 # vLLM support
 pip install vllm==0.7.2
+

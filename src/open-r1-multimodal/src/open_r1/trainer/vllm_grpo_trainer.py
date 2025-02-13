@@ -302,21 +302,21 @@ class Qwen2VLGRPOVLLMTrainer(Trainer):
         self.use_vllm = args.use_vllm
 
         # rewrite the processing AutoTokenizer -> AutoProcessor
-        # model_id = model if isinstance(model, str) else model.config._name_or_path
-        # if processing_class is None:
-        #     if "Qwen2-VL" in model_id or "Aria" in model_id:
-        #         processing_class = AutoProcessor.from_pretrained(model_id)
-        #         pad_token_id = processing_class.tokenizer.pad_token_id
-        #         processing_class.pad_token_id = pad_token_id
-        #         processing_class.eos_token_id = processing_class.tokenizer.eos_token_id
-        #         if "Qwen2-VL" in model_id:
-        #             processing_class.image_processor.max_pixels = max_pixels
-        #             processing_class.image_processor.min_pixels = min_pixels
-        #     else:
-        #         processing_class = AutoTokenizer.from_pretrained(
-        #             model.config._name_or_path, padding_side="left"
-        #         )
-        #         pad_token_id = processing_class.pad_token_id
+        model_id = model if isinstance(model, str) else model.config._name_or_path
+        if processing_class is None:
+            if "Qwen2-VL" in model_id or "Aria" in model_id:
+                processing_class = AutoProcessor.from_pretrained(model_id)
+                pad_token_id = processing_class.tokenizer.pad_token_id
+                processing_class.pad_token_id = pad_token_id
+                processing_class.eos_token_id = processing_class.tokenizer.eos_token_id
+                if "Qwen2-VL" in model_id:
+                    processing_class.image_processor.max_pixels = max_pixels
+                    processing_class.image_processor.min_pixels = min_pixels
+            else:
+                processing_class = AutoTokenizer.from_pretrained(
+                    model.config._name_or_path, padding_side="left"
+                )
+                pad_token_id = processing_class.pad_token_id
 
         super().__init__(
             model=model,
