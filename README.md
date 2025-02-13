@@ -5,7 +5,7 @@
 
 ## 新特性
 ### 2025.02.13
-1. 为方便管理，内部环境的启动脚本已全部移到 ``src/scripts/internal_scripts/` 下。
+1. 为方便管理，内部环境的启动脚本已全部移到 `src/scripts/internal_scripts/` 下。
 
 2. vllm_grpo_trainer启动脚本样例：`src/scripts/internal_scripts/run_vllm_grpo_clevr_torchrun_gy.sh`
     - 目前不支持多机vllm
