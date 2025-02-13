@@ -10,7 +10,7 @@ export PYTHONPATH="${PYTHONPATH}:$(pwd)"
 # export PYTHONPATH=src:$PYTHONPATH
 
 # ==== 设置输出路径 ==== #
-RUN_NAME="qwen_2_vl_2b_vllm_grpo_clevr_70k_gy_lr1e-6_bs1_ga2_ep2_torchrun"
+RUN_NAME="qwen_2_vl_2b_vllm_grpo_clevr_70k_gy_lr1e-6_bs1_ga2_ep2_torchrun_debug_20250212"
 OUTPUT_DIR="/apdcephfs_cq8/share_1611098/ruanzheng/code/src/R1-V/output/${RUN_NAME}"
 if [ ! -d "$OUTPUT_DIR" ]; then
  mkdir -p "$OUTPUT_DIR"
@@ -34,8 +34,8 @@ torchrun \
     --output_dir ${OUTPUT_DIR} \
     --model_name_or_path ${MODEL_NAME} \
     --dataset_name ${DATASET_NAME} \
-    --max_prompt_length 512 \
-    --max_completion_length 1024 \
+    --max_prompt_length 1024 \
+    --max_completion_length 256 \
     --per_device_train_batch_size ${PER_DEVICE_BATCH_SIZE} \
     --gradient_accumulation_steps ${GRADIENT_ACC} \
     --logging_steps 1 \
@@ -51,6 +51,5 @@ torchrun \
     --report_to tensorboard \
     --use_vllm true \
     --num_generations 6 \
-    --deepspeed ${DS_CONFIG} \
     --vllm_device "cuda:6" \
     2>&1 | tee "${OUTPUT_DIR}/training_log.txt"

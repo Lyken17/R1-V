@@ -15,12 +15,12 @@ HOSTFILE_DIR=$work_dir/"hostfiles"
 if [ ! -d "$HOSTFILE_DIR" ]; then
     mkdir -p "$HOSTFILE_DIR"
 fi
-DEFAULT_HOSTFILE="${HOSTFILE_DIR}/hostfile_default"
-DEFAULT_NUM_NODES=1
-DEFAULT_MASTER_ADDR="127.0.0.1"
+DEFAULT_HOSTFILE=${HOSTFILE_DIR}/hostfile_29.127.33.199_48gpu
+DEFAULT_NUM_NODES=6
+DEFAULT_MASTER_ADDR=29.127.33.199
 
-dist_info_choice="auto"
-# dist_info_choice="manual"
+# dist_info_choice="auto"
+dist_info_choice="manual"
 # 根据 dist_info_choice 选择自动或手动
 if [ "$dist_info_choice" == "auto" ]; then
     # 获取 launcher_ip
@@ -50,9 +50,9 @@ GPUS=${GPUS:-8}
 PER_DEVICE_BATCH_SIZE=${PER_DEVICE_BATCH_SIZE:-1}
 GRADIENT_ACC=${GRADIENT_ACC:-2}
 
-# export PYTHONPATH="${PYTHONPATH}:$(pwd)"
-export PYTHONPATH=src:$PYTHONPATH
-export MASTER_PORT=15345
+export PYTHONPATH="${PYTHONPATH}:$(pwd)"
+# export PYTHONPATH=src:$PYTHONPATH
+export MASTER_PORT=12345
 export TF_CPP_MIN_LOG_LEVEL=3
 export LAUNCHER=pytorch
 
@@ -93,22 +93,22 @@ fi
 RUN_NAME="qwen_2_vl_2b_grpo_clevr_70k_gy_lr1e-6_bs1_ga2_ep1_zero1_optim_test"
 OUTPUT_DIR="/apdcephfs_cq8/share_1611098/ruanzheng/code/src/R1-V/output/${RUN_NAME}"
 if [ ! -d "$OUTPUT_DIR" ]; then
- mkdir -p "$OUTPUT_DIR
+ mkdir -p "$OUTPUT_DIR"
 fi
 # ==== 选择模型、数据集和deepspeed配置 ==== #
 MODEL_NAME="/apdcephfs_gy2/share_302735770/stephenruan/code/src/Qwen2-VL-2B-Instruct"
 # MODEL_NAME="/apdcephfs_gy2/share_302735770/stephenruan/code/src/Qwen2.5-VL-7B-Instruct"
 DATASET_NAME="/apdcephfs_gy2/share_302735770/stephenruan/data/leonardPKU___clevr_cogen_a_train"
-DS_CONFIG="/apdcephfs_cq8/share_1611098/ruanzheng/code/src/R1-V/src/open-r1-multimodal/local_scripts/zero_stage1_config.json"
+DS_CONFIG="/apdcephfs_cq8/share_1611098/ruanzheng/code/src/R1-V/src/open-r1-multimodal/local_scripts/zero1.json"
 export DEBUG_MODE="true" # Enable Debug if you want to see the rollout of model during RL
 export LOG_PATH="${OUTPUT_DIR}/debug_log_${MODEL_NAME}.txt"
 
 deepspeed \
-    --hostfile ${HOSTFILE} \
-    --num_nodes ${NUM_NODES} \
-    --master_addr ${MASTER_ADDR} \
-    --num_gpus ${GPUS} \
-    --master_port ${MASTER_PORT} \
+    --hostfile=${HOSTFILE} \
+    --num_nodes=${NUM_NODES} \
+    --master_addr=${MASTER_ADDR} \
+    --num_gpus=${GPUS} \
+    --master_port=${MASTER_PORT} \
     src/open_r1/grpo.py \
     --output_dir ${OUTPUT_DIR} \
     --model_name_or_path ${MODEL_NAME} \

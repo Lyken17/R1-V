@@ -355,8 +355,6 @@ class Qwen2VLGRPOTrainer(Trainer):
     def compute_loss(self, model, inputs, return_outputs=False, num_items_in_batch=None):
         if return_outputs:
             raise ValueError("The GRPOTrainer does not support returning outputs")
-    
-        
 
         prompts = [x["prompt"] for x in inputs]
         prompts_text = [maybe_apply_chat_template(example, self.processing_class)["prompt"] for example in inputs]
@@ -429,6 +427,7 @@ class Qwen2VLGRPOTrainer(Trainer):
         # Concatenate prompt_mask with completion_mask for logit computation
         attention_mask = torch.cat([prompt_mask, completion_mask], dim=1)  # (B*G, P+C)
         pixel_values = prompt_inputs["pixel_values"][None].repeat_interleave(self.num_generations, dim=0)
+        # print("device:", device, "pixel_values", pixel_values.shape)
         image_grid_thw = prompt_inputs["image_grid_thw"].repeat_interleave(self.num_generations, dim=0)
 
         per_token_logps = self._get_per_token_logps(model, prompt_completion_ids, attention_mask, pixel_values, image_grid_thw)
@@ -460,9 +459,11 @@ class Qwen2VLGRPOTrainer(Trainer):
         ):
             if isinstance(reward_func, PreTrainedModel):
                 if is_conversational(inputs[0]):
+                    # import pdb; pdb.set_trace()
                     messages = [{"messages": p + c} for p, c in zip(prompts, completions)]
                     texts = [apply_chat_template(x, reward_processing_class)["text"] for x in messages]
                 else:
+                    # import pdb; pdb.set_trace()
                     texts = [p + c for p, c in zip(prompts, completions)]
                 reward_inputs = reward_processing_class(
                     texts, return_tensors="pt", padding=True, padding_side="right", add_special_tokens=False
@@ -477,8 +478,10 @@ class Qwen2VLGRPOTrainer(Trainer):
                     for example in inputs:
                         # Repeat each value in the column for `num_generations` times
                         reward_kwargs[key].extend([example[key]] * self.num_generations)
+                # print(reward_kwargs)
                 output_reward_func = reward_func(prompts=prompts, completions=completions, **reward_kwargs)
                 rewards_per_func[:, i] = torch.tensor(output_reward_func, dtype=torch.float32, device=device)
+                # import pdb; pdb.set_trace()
 
         # Sum the rewards from all reward functions
         rewards = rewards_per_func.sum(dim=1)

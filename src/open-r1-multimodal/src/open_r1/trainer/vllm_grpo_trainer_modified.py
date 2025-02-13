@@ -67,7 +67,6 @@ if is_peft_available():
 if is_vllm_available():
     from vllm import LLM, SamplingParams
 
-
 if is_wandb_available():
     import wandb
 import torch.nn as nn
@@ -78,42 +77,7 @@ from torch.utils.data import Sampler
 RewardFunc = Union[str, PreTrainedModel, Callable[[list, list], list[float]]]
 
 
-class RepeatRandomSampler(Sampler):
-    """
-    Sampler that repeats the indices of a dataset N times.
-
-    Args:
-        data_source (`Sized`):
-            Dataset to sample from.
-        repeat_count (`int`):
-            Number of times to repeat each index.
-
-    Example:
-    ```python
-    >>> sampler = RepeatRandomSampler(["a", "b", "c", "d"], repeat_count=2)
-    >>> list(sampler)
-    [2, 2, 0, 0, 3, 3, 1, 1]
-    ```
-    """
-
-    def __init__(self, data_source, repeat_count: int):
-        self.data_source = data_source
-        self.repeat_count = repeat_count
-        self.num_samples = len(data_source)
-
-    def __iter__(self):
-        indexes = [
-            idx
-            for idx in torch.randperm(self.num_samples).tolist()
-            for _ in range(self.repeat_count)
-        ]
-        return iter(indexes)
-
-    def __len__(self):
-        return self.num_samples * self.repeat_count
-
-
-class Qwen2VLGRPOVLLMTrainer(Trainer):
+class Qwen2VLGRPOVLLMTrainerModified(Trainer):
     def __init__(
         self,
         model: Union[str, PreTrainedModel],
@@ -175,6 +139,10 @@ class Qwen2VLGRPOVLLMTrainer(Trainer):
                 model = Qwen2VLForConditionalGeneration.from_pretrained(
                     model, **model_init_kwargs
                 )
+            elif "Qwen2.5-VL" in model_id:
+                model = Qwen2_5_VLForConditionalGeneration.from_pretrained(
+                    model, **model_init_kwargs
+                )
             elif "Aria" in model_id:
                 model_init_kwargs.pop("use_cache")
                 model = AriaForConditionalGeneration.from_pretrained(
@@ -199,6 +167,10 @@ class Qwen2VLGRPOVLLMTrainer(Trainer):
                 self.ref_model = Qwen2VLForConditionalGeneration.from_pretrained(
                     model_id, **model_init_kwargs
                 )
+            elif "Qwen2.5-VL" in model_id:
+                model = Qwen2_5_VLForConditionalGeneration.from_pretrained(
+                    model, **model_init_kwargs
+                )
             elif "Aria" in model_id:
                 self.ref_model = AriaForConditionalGeneration.from_pretrained(
                     model_id, **model_init_kwargs
@@ -217,12 +189,12 @@ class Qwen2VLGRPOVLLMTrainer(Trainer):
 
         # Processing class
         if processing_class is None:
-            if "Qwen2-VL" in model_id or "Aria" in model_id:
+            if "Qwen" in model_id or "Aria" in model_id:
                 processing_class = AutoProcessor.from_pretrained(model_id)
                 pad_token_id = processing_class.tokenizer.pad_token_id
                 processing_class.pad_token_id = pad_token_id
                 processing_class.eos_token_id = processing_class.tokenizer.eos_token_id
-                if "Qwen2-VL" in model_id:
+                if "Qwen" in model_id:
                     processing_class.image_processor.max_pixels = max_pixels
                     processing_class.image_processor.min_pixels = min_pixels
             else:
@@ -280,13 +252,7 @@ class Qwen2VLGRPOVLLMTrainer(Trainer):
             args.max_completion_length
         )  # = |o_i| in the GRPO paper
         self.num_generations = args.num_generations  # = G in the GRPO paper
-        self.generation_config = GenerationConfig(
-            max_new_tokens=self.max_completion_length,
-            do_sample=True,
-            temperature=1,  # HACK
-            num_return_sequences=self.num_generations,
-            pad_token_id=pad_token_id,
-        )
+
         self.beta = args.beta
 
         # The trainer estimates the number of FLOPs (floating-point operations) using the number of elements in the
@@ -302,21 +268,21 @@ class Qwen2VLGRPOVLLMTrainer(Trainer):
         self.use_vllm = args.use_vllm
 
         # rewrite the processing AutoTokenizer -> AutoProcessor
-        # model_id = model if isinstance(model, str) else model.config._name_or_path
-        # if processing_class is None:
-        #     if "Qwen2-VL" in model_id or "Aria" in model_id:
-        #         processing_class = AutoProcessor.from_pretrained(model_id)
-        #         pad_token_id = processing_class.tokenizer.pad_token_id
-        #         processing_class.pad_token_id = pad_token_id
-        #         processing_class.eos_token_id = processing_class.tokenizer.eos_token_id
-        #         if "Qwen2-VL" in model_id:
-        #             processing_class.image_processor.max_pixels = max_pixels
-        #             processing_class.image_processor.min_pixels = min_pixels
-        #     else:
-        #         processing_class = AutoTokenizer.from_pretrained(
-        #             model.config._name_or_path, padding_side="left"
-        #         )
-        #         pad_token_id = processing_class.pad_token_id
+        model_id = model if isinstance(model, str) else model.config._name_or_path
+        if processing_class is None:
+            if "Qwen" in model_id or "Aria" in model_id:
+                processing_class = AutoProcessor.from_pretrained(model_id)
+                pad_token_id = processing_class.tokenizer.pad_token_id
+                processing_class.pad_token_id = pad_token_id
+                processing_class.eos_token_id = processing_class.tokenizer.eos_token_id
+                if "Qwen" in model_id:
+                    processing_class.image_processor.max_pixels = max_pixels
+                    processing_class.image_processor.min_pixels = min_pixels
+            else:
+                processing_class = AutoTokenizer.from_pretrained(
+                    model.config._name_or_path, padding_side="left"
+                )
+                pad_token_id = processing_class.pad_token_id
 
         super().__init__(
             model=model,
@@ -335,11 +301,7 @@ class Qwen2VLGRPOVLLMTrainer(Trainer):
         # Check if the per_device_train/eval_batch_size * num processes can be divided by the number of generations
         num_processes = self.accelerator.num_processes
         global_batch_size = args.per_device_train_batch_size * num_processes
-        possible_values = [
-            n_gen
-            for n_gen in range(2, global_batch_size + 1)
-            if (global_batch_size) % n_gen == 0
-        ]
+        possible_values = [n_gen for n_gen in range(2, global_batch_size + 1) if (global_batch_size) % n_gen == 0]
 
         if self.num_generations not in possible_values:
             raise ValueError(
@@ -349,11 +311,7 @@ class Qwen2VLGRPOVLLMTrainer(Trainer):
             )
         if self.args.eval_strategy != "no":
             global_batch_size = args.per_device_eval_batch_size * num_processes
-            possible_values = [
-                n_gen
-                for n_gen in range(2, global_batch_size + 1)
-                if (global_batch_size) % n_gen == 0
-            ]
+            possible_values = [n_gen for n_gen in range(2, global_batch_size + 1) if (global_batch_size) % n_gen == 0]
             if self.num_generations not in possible_values:
                 raise ValueError(
                     f"The global eval batch size ({num_processes} x {args.per_device_eval_batch_size}) must be evenly "
@@ -420,9 +378,7 @@ class Qwen2VLGRPOVLLMTrainer(Trainer):
                     max_tokens=self.max_completion_length,
                 )
 
-            self._last_loaded_step = (
-                0  # tag to avoid useless loading during grad accumulation
-            )
+            self._last_loaded_step = 0  # tag to avoid useless loading during grad accumulation
 
             # When using vLLM, the main process is responsible for loading the model weights. This can cause process
             # desynchronization and seems to lead to DeepSpeed hanging during initialization. To prevent this, we
@@ -430,22 +386,18 @@ class Qwen2VLGRPOVLLMTrainer(Trainer):
             self.accelerator.wait_for_everyone()
         else:
             raise ValueError(
-                "Qwen2VLGRPOVLLMTrainer only supports vllm generation, please set --use_vllm True"
+                "GRPOVLLMTrainerModified only supports vllm generation, please set --use_vllm True"
             )
 
         if self.ref_model is not None:
             if self.is_deepspeed_enabled:
                 self.ref_model = prepare_deepspeed(self.ref_model, self.accelerator)
             else:
-                self.ref_model = self.accelerator.prepare_model(
-                    self.ref_model, evaluation_mode=True
-                )
+                self.ref_model = self.accelerator.prepare_model(self.ref_model, evaluation_mode=True)
 
         for i, reward_func in enumerate(self.reward_funcs):
             if isinstance(reward_func, PreTrainedModel):
-                self.reward_funcs[i] = self.accelerator.prepare_model(
-                    reward_func, evaluation_mode=True
-                )
+                self.reward_funcs[i] = self.accelerator.prepare_model(reward_func, evaluation_mode=True)
 
     def _set_signature_columns_if_needed(self):
         # If `self.args.remove_unused_columns` is True, non-signature columns are removed.
@@ -454,10 +406,6 @@ class Qwen2VLGRPOVLLMTrainer(Trainer):
         # Instead, we set them to the columns expected by the `training_step` method, hence the override.
         if self._signature_columns is None:
             self._signature_columns = ["prompt"]
-
-    # We need a custom sampler that samples the same prompt multiple times
-    def _get_train_sampler(self):
-        return RepeatRandomSampler(self.train_dataset, self.num_generations)
 
     # Get the per-token log probabilities for the completions for the model and the reference model
     def _get_per_token_logps(
@@ -507,7 +455,6 @@ class Qwen2VLGRPOVLLMTrainer(Trainer):
             for example in inputs
         ]
         prompt_inputs = self.processing_class(
-            # prompts_text, return_tensors="pt", padding=True, padding_side="left", add_special_tokens=False
             text=prompts_text,
             images=images,
             return_tensors="pt",
@@ -515,10 +462,8 @@ class Qwen2VLGRPOVLLMTrainer(Trainer):
             padding_side="left",
             add_special_tokens=False,
         )
-        prompt_ids, prompt_mask = (
-            prompt_inputs["input_ids"].to(device),
-            prompt_inputs["attention_mask"].to(device),
-        )
+        prompt_ids, prompt_mask = prompt_inputs["input_ids"].to(device), prompt_inputs["attention_mask"].to(device)
+        
         if self.max_prompt_length is not None:
             prompt_ids = prompt_ids[:, -self.max_prompt_length :]
             prompt_mask = prompt_mask[:, -self.max_prompt_length :]
@@ -546,39 +491,49 @@ class Qwen2VLGRPOVLLMTrainer(Trainer):
             all_prompts_text = gather_object(prompts_text)
             all_images = gather_object(images)
             # group into pairs
-            all_multimodal_inputs = [
-                {"prompt": p, "multi_modal_data": {"image": i}}
-                for p, i in zip(all_prompts_text, all_images)
-            ]
+            all_multimodal_inputs = []
+            for prompt, image in zip(all_prompts_text, all_images):
+                for _ in range(self.num_generations):
+                    all_multimodal_inputs.append({"prompt": prompt, "multi_modal_data": {"image": image}})
 
-            if self.accelerator.is_main_process:
-                outputs = self.llm.generate(
-                    all_multimodal_inputs,
-                    sampling_params=self.sampling_params,
-                    use_tqdm=False,
-                )
-                completion_ids = [
-                    out.token_ids
-                    for completions in outputs
-                    for out in completions.outputs
-                ]
-            else:
-                completion_ids = [None] * len(all_prompts_text)
+            # NOTE: The sampling should be divided into `num_generations` batches, 
+            # otherwise the sampling of each prompt will be the same
+            all_completion_ids = [None] * len(all_multimodal_inputs)
+            for i in range(self.num_generations):
+                # Get the inputs for the current batch
+                batch_inputs = [all_multimodal_inputs[j] for j in range(i, len(all_multimodal_inputs), self.num_generations)]
+                if self.accelerator.is_main_process:
+                    outputs = self.llm.generate(
+                        batch_inputs,
+                        sampling_params=self.sampling_params,
+                        use_tqdm=False,
+                    )
+                    batch_completion_ids = [out.token_ids for completions in outputs for out in completions.outputs]
+                else:
+                    batch_completion_ids = [None] * len(batch_inputs)
+                # Place the results back into their original positions
+                for idx, completion_id in enumerate(batch_completion_ids):
+                    all_completion_ids[i + idx * self.num_generations] = completion_id
+            completion_ids = all_completion_ids
+            
             completion_ids = broadcast_object_list(completion_ids, from_process=0)
             process_slice = slice(
-                self.accelerator.process_index * len(prompts),
-                (self.accelerator.process_index + 1) * len(prompts),
+                self.accelerator.process_index * len(prompts) * self.num_generations,
+                (self.accelerator.process_index + 1) * len(prompts) * self.num_generations,
             )
             completion_ids = completion_ids[process_slice]
-
             # Pad the completions, and concatenate them with the prompts
-            completion_ids = [
-                torch.tensor(ids, device=device) for ids in completion_ids
-            ]
+            completion_ids = [torch.tensor(ids, device=device) for ids in completion_ids]
             completion_ids = pad(
                 completion_ids, padding_value=self.processing_class.pad_token_id
             )
+            prompt_ids = prompt_ids.repeat_interleave(self.num_generations, dim=0)
             prompt_completion_ids = torch.cat([prompt_ids, completion_ids], dim=1)
+
+            prompt_length = prompt_ids.size(1)
+            prompt_ids = prompt_completion_ids[:, :prompt_length]
+            completion_ids = prompt_completion_ids[:, prompt_length:]
+            prompt_mask = prompt_mask.repeat_interleave(self.num_generations, dim=0)
         else:
             raise ValueError("Only vLLM generation is supported in this version ")
 
@@ -586,33 +541,25 @@ class Qwen2VLGRPOVLLMTrainer(Trainer):
         # Mask everything after the first EOS token
         is_eos = completion_ids == self.processing_class.eos_token_id
         device = self.accelerator.device
-        eos_idx = torch.full(
-            (is_eos.size(0),), is_eos.size(1), dtype=torch.long, device=device
-        )
+        eos_idx = torch.full((is_eos.size(0),), is_eos.size(1), dtype=torch.long, device=device)
         eos_idx[is_eos.any(dim=1)] = is_eos.int().argmax(dim=1)[is_eos.any(dim=1)]
-        sequence_indices = torch.arange(is_eos.size(1), device=device).expand(
-            is_eos.size(0), -1
-        )
+        sequence_indices = torch.arange(is_eos.size(1), device=device).expand(is_eos.size(0), -1)
         completion_mask = (sequence_indices <= eos_idx.unsqueeze(1)).int()
 
         # Concatenate prompt_mask with completion_mask for logit computation
         attention_mask = torch.cat([prompt_mask, completion_mask], dim=1)  # (B*G, P+C)
-        # pixel_values = prompt_inputs["pixel_values"].repeat_interleave(
-        #     self.num_generations, dim=0
-        # )
 
-        pixel_values = prompt_inputs["pixel_values"]
-        # [None].repeat_interleave(self.num_generations, dim=0)
-        # pixel_values = pixel_values.view(-1, pixel_values.shape[-1])
-
-        image_grid_thw = prompt_inputs["image_grid_thw"]
-        # .repeat_interleave(
-        #     self.num_generations, dim=0
-        # )
+        pixel_values = prompt_inputs["pixel_values"][None].repeat_interleave(self.num_generations, dim=0)
+        image_grid_thw = prompt_inputs["image_grid_thw"].repeat_interleave(self.num_generations, dim=0)
         logits_to_keep = completion_ids.size(1)
 
         with torch.inference_mode():
             if self.ref_model is not None:
+                # print("device:", device, "prompt_completion_ids:", prompt_completion_ids.shape)
+                # print("device:", device, "attention_mask:", attention_mask.shape)
+                # print("device:", device, "pixel_values:", pixel_values.shape)
+                # print("device:", device, "image_grid_thw:", image_grid_thw.shape)
+                # print("device:", device, "logits_to_keep:", logits_to_keep)
                 ref_per_token_logps = self._get_per_token_logps(
                     self.ref_model,
                     prompt_completion_ids,
@@ -643,6 +590,7 @@ class Qwen2VLGRPOVLLMTrainer(Trainer):
             ]
 
         # Compute the rewards
+        prompts = [prompt for prompt in prompts for _ in range(self.num_generations)]
         rewards_per_func = torch.zeros(
             len(prompts), len(self.reward_funcs), device=device
         )
@@ -651,9 +599,7 @@ class Qwen2VLGRPOVLLMTrainer(Trainer):
         ):
             if isinstance(reward_func, PreTrainedModel):
                 if is_conversational(inputs[0]):
-                    messages = [
-                        {"messages": p + c} for p, c in zip(prompts, completions)
-                    ]
+                    messages = [{"messages": p + c} for p, c in zip(prompts, completions)]
                     texts = [
                         apply_chat_template(x, reward_processing_class)["text"]
                         for x in messages
@@ -669,9 +615,7 @@ class Qwen2VLGRPOVLLMTrainer(Trainer):
                 )
                 reward_inputs = super()._prepare_inputs(reward_inputs)
                 with torch.inference_mode():
-                    rewards_per_func[:, i] = reward_func(**reward_inputs).logits[
-                        :, 0
-                    ]  # Shape (B*G,)
+                    rewards_per_func[:, i] = reward_func(**reward_inputs).logits[:, 0]  # Shape (B*G,)
             else:
                 # Repeat all input columns (but "prompt" and "completion") to match the number of generations
                 reward_kwargs = {
@@ -748,17 +692,12 @@ class Qwen2VLGRPOVLLMTrainer(Trainer):
         # Compute the per-token log probabilities for the model
 
         prompt_ids, prompt_mask = inputs["prompt_ids"], inputs["prompt_mask"]
-        completion_ids, completion_mask = (
-            inputs["completion_ids"],
-            inputs["completion_mask"],
-        )
+        completion_ids, completion_mask = inputs["completion_ids"], inputs["completion_mask"]
         input_ids = torch.cat([prompt_ids, completion_ids], dim=1)
         attention_mask = torch.cat([prompt_mask, completion_mask], dim=1)
         pixel_values = inputs["pixel_values"]
         image_grid_thw = inputs["image_grid_thw"]
-        logits_to_keep = completion_ids.size(
-            1
-        )  # we only need to compute the logits for the completion tokens
+        logits_to_keep = completion_ids.size(1)  # we only need to compute the logits for the completion tokens
 
         per_token_logps = self._get_per_token_logps(
             model,
@@ -771,21 +710,13 @@ class Qwen2VLGRPOVLLMTrainer(Trainer):
 
         # Compute the KL divergence between the model and the reference model
         ref_per_token_logps = inputs["ref_per_token_logps"]
-        per_token_kl = (
-            torch.exp(ref_per_token_logps - per_token_logps)
-            - (ref_per_token_logps - per_token_logps)
-            - 1
-        )
+        per_token_kl = (torch.exp(ref_per_token_logps - per_token_logps)- (ref_per_token_logps - per_token_logps)- 1)
 
         # x - x.detach() allows for preserving gradients from x
         advantages = inputs["advantages"]
-        per_token_loss = torch.exp(
-            per_token_logps - per_token_logps.detach()
-        ) * advantages.unsqueeze(1)
+        per_token_loss = torch.exp(per_token_logps - per_token_logps.detach()) * advantages.unsqueeze(1)
         per_token_loss = -(per_token_loss - self.beta * per_token_kl)
-        loss = (
-            (per_token_loss * completion_mask).sum(dim=1) / completion_mask.sum(dim=1)
-        ).mean()
+        loss = ((per_token_loss * completion_mask).sum(dim=1) / completion_mask.sum(dim=1)).mean()
 
         # Log the metrics
         completion_length = (

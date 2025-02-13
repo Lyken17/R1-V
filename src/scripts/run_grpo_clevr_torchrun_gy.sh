@@ -50,5 +50,4 @@ torchrun \
     --save_total_limit 3 \
     --save_only_model true \
     --report_to tensorboard \
-    --deepspeed ${DS_CONFIG} \
     2>&1 | tee "${OUTPUT_DIR}/training_log.txt"
