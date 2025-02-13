@@ -64,7 +64,8 @@
 
 ### Updates
 
-- 2025-02-12: R1-V now supports vLLM to accelerate training and SFT.
+- 2025-02-12: We fixed the batched decoding error. The orignial RL training scirpt now is 3x speeded up.
+- 2025-02-12: R1-V now supports vLLM to accelerate training (`pip install vllm==0.7.2` before use) and SFT.
 - 2025-02-11: R1-V now supports Qwen2.5-VL and [GEOQA](https://arxiv.org/abs/2312.11370) task.
 - 2025-02-06: We upload the evaluation script and polish the README. We are writing a blog post summarizing the statistics, findings and underexplored questions. 
 - 2025-02-03: We upload the training codebase.
@@ -108,8 +109,8 @@ bash setup.sh
 
 ### Supported Evaluations
 
-1. [SuperClevr-200](https://github.com/Deep-Agent/R1-V?tab=readme-ov-file#superclevr)
-2. [GeoQA-Test-Direct-Answer-735](https://github.com/Deep-Agent/R1-V?tab=readme-ov-file#geoqa)
+1. [SuperClevr-200](https://github.com/Deep-Agent/R1-V?tab=readme-ov-file#superclevr): Item Counting Problems
+2. [GeoQA-Test-Direct-Answer-735](https://github.com/Deep-Agent/R1-V?tab=readme-ov-file#geoqa): Geometry Reasoning
 
 ## Training
 
@@ -128,8 +129,8 @@ torchrun --nproc_per_node="8" \
     --master_port="12345" \
     src/open_r1/grpo.py \
     --output_dir <OUTPUT_DIR> \
-    --model_name_or_path <PATH-TO-Qwen2-VL-2B-Instruct> \ # Currently supported models: Qwen2-VL, Qwen2.5-VL
-    --dataset_name leonardPKU/clevr_cogen_a_train \  # Currently supported datasets: leonardPKU/clevr_cogen_a_train, leonardPKU/GEOQA_R1V_Train_8K
+    --model_name_or_path <PATH-TO-Qwen2-VL-2B-Instruct> \ 
+    --dataset_name leonardPKU/clevr_cogen_a_train \  
     --deepspeed local_scripts/zero3.json \
     --max_prompt_length 512 \
     --max_completion_length 512 \
@@ -152,6 +153,7 @@ torchrun --nproc_per_node="8" \
 > [!NOTE] 
 > 1. To reproduce the result, keep the per_device_train_batch_size to 1 for now, as there is a revealed bug about batched training. See the [reproduction report](https://github.com/Deep-Agent/R1-V/issues/4#issuecomment-2633348354) here. We realize it is important for effiency and are working on solving it with the community.
 > 2. If you meet **OOM Error**, you can try reduce `--num_generations`
+> 3. To use vLLM to speed up, please refer to this [script](https://github.com/Deep-Agent/R1-V/blob/main/src/scripts/run_grpo_vllm.sh), currently it only supports Qwen2VL model series.
 
 
 ### SFT
