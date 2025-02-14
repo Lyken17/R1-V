@@ -335,7 +335,7 @@ class Qwen2VLGRPOVLLMTrainerModified(Trainer):
                         # This is particularly useful here because we generate completions from the same prompts.
                         enable_prefix_caching=True,
                         enforce_eager=True,
-                        max_model_len=args.max_completion_length,
+                        max_model_len=args.max_prompt_length + args.max_completion_length,
                     )
                 self.sampling_params = SamplingParams(
                     temperature=args.temperature,
@@ -419,7 +419,7 @@ class Qwen2VLGRPOVLLMTrainerModified(Trainer):
             for example in inputs
         ]
         prompt_inputs = self.processing_class(
-            text=prompts_text,
+            text=copy.deepcopy(prompts_text),
             images=images,
             return_tensors="pt",
             padding=True,
@@ -460,24 +460,45 @@ class Qwen2VLGRPOVLLMTrainerModified(Trainer):
                 for _ in range(self.num_generations):
                     all_multimodal_inputs.append({"prompt": prompt, "multi_modal_data": {"image": image}})
 
-            # NOTE: The sampling should be divided into `num_generations` batches, 
-            # otherwise the sampling of each prompt will be the same
+            # # NOTE: The sampling should be divided into `num_generations` batches, 
+            # # otherwise the sampling of each prompt will be the same
+            # all_completion_ids = [None] * len(all_multimodal_inputs)
+            # for i in range(self.num_generations):
+            #     # Get the inputs for the current batch
+            #     batch_inputs = [all_multimodal_inputs[j] for j in range(i, len(all_multimodal_inputs), self.num_generations)]
+            #     if self.accelerator.is_main_process:
+            #         outputs = self.llm.generate(
+            #             batch_inputs,
+            #             sampling_params=self.sampling_params,
+            #             use_tqdm=False,
+            #         )
+            #         batch_completion_ids = [out.token_ids for completions in outputs for out in completions.outputs]
+            #     else:
+            #         batch_completion_ids = [None] * len(batch_inputs)
+            #     # Place the results back into their original positions
+            #     for idx, completion_id in enumerate(batch_completion_ids):
+            #         all_completion_ids[i + idx * self.num_generations] = completion_id
+            # completion_ids = all_completion_ids
+
+            # Initialize the list to store completion IDs
             all_completion_ids = [None] * len(all_multimodal_inputs)
             for i in range(self.num_generations):
                 # Get the inputs for the current batch
                 batch_inputs = [all_multimodal_inputs[j] for j in range(i, len(all_multimodal_inputs), self.num_generations)]
                 if self.accelerator.is_main_process:
+                    # Generate output for the current input
                     outputs = self.llm.generate(
-                        batch_inputs,
+                        input_data,  # Pass the current input as a single-element list
                         sampling_params=self.sampling_params,
                         use_tqdm=False,
                     )
-                    batch_completion_ids = [out.token_ids for completions in outputs for out in completions.outputs]
+                    # Extract the completion IDs from the output
+                    completion_ids = [out.token_ids for completions in outputs for out in completions.outputs]
+                    all_completion_ids[i] = completion_ids[0]  # Store the result
                 else:
-                    batch_completion_ids = [None] * len(batch_inputs)
-                # Place the results back into their original positions
-                for idx, completion_id in enumerate(batch_completion_ids):
-                    all_completion_ids[i + idx * self.num_generations] = completion_id
+                    all_completion_ids[i] = None  # Non-main processes store None
+
+            # Final completion IDs
             completion_ids = all_completion_ids
             
             completion_ids = broadcast_object_list(completion_ids, from_process=0)
