@@ -20,6 +20,7 @@ from accelerate.utils.other import is_compiled_module
 from accelerate.utils import broadcast_object_list, gather, gather_object
 import torch
 import torch.utils.data
+import torch.distributed as dist
 import transformers
 import warnings
 from unittest.mock import patch
@@ -71,14 +72,13 @@ if is_vllm_available():
 if is_wandb_available():
     import wandb
 import torch.nn as nn
-from torch.utils.data import Sampler
 
 # What we call a reward function is a callable that takes a list of prompts and completions and returns a list of
 # rewards. When it's a string, it's a model ID, so it's loaded as a pretrained model.
 RewardFunc = Union[str, PreTrainedModel, Callable[[list, list], list[float]]]
 
 
-class Qwen2VLGRPOVLLMTrainerModified(Trainer):
+class Qwen2VLGRPOVLLMTrainerModifiedMultiNodes(Trainer):
     def __init__(
         self,
         model: Union[str, PreTrainedModel],
@@ -102,7 +102,6 @@ class Qwen2VLGRPOVLLMTrainerModified(Trainer):
         min_pixels: Optional[int] = 3136,
         attn_implementation: str = "flash_attention_2",
     ):
-
         # Args
         if args is None:
             model_name = model if isinstance(model, str) else model.config._name_or_path
@@ -266,7 +265,7 @@ class Qwen2VLGRPOVLLMTrainerModified(Trainer):
 
         # Initialize the metrics
         self._metrics = defaultdict(list)
-        self.use_vllm = args.use_vllm
+        # self.use_vllm = args.use_vllm
 
         super().__init__(
             model=model,
@@ -282,84 +281,6 @@ class Qwen2VLGRPOVLLMTrainerModified(Trainer):
         # model accepts loss-related kwargs. Since we compute our own loss, this check is irrelevant. We set
         # self.model_accepts_loss_kwargs to False to enable scaling.
         self.model_accepts_loss_kwargs = False
-
-        if self.use_vllm:
-            if not is_vllm_available():
-                raise ImportError(
-                    "vLLM is not available and `use_vllm` is set to True. Please install vLLM with "
-                    "`pip install vllm` to use it."
-                )
-
-            if self.accelerator.is_main_process:
-                vllm_device = self.args.vllm_device
-                if vllm_device == "auto":
-                    vllm_device = f"cuda:{self.accelerator.num_processes}"  # take the next GPU idx
-                # Check that the requested device is available
-                if (
-                    vllm_device.split(":")[0] == "cuda"
-                    and int(vllm_device.split(":")[1]) >= torch.cuda.device_count()
-                ):
-                    raise ValueError(
-                        f"The requested device for vllm ({vllm_device}) is not available. You are likely using vLLM "
-                        "without restricting the number of GPUs for training. Set the `--num_processes` argument to a "
-                        "value lower than the number of GPUs available on your machine—typically, reducing it by one "
-                        f"is sufficient. In your case: `--num_processes {torch.cuda.device_count() - 1}`."
-                    )
-                # Check that the requested device is not also used for training
-                if vllm_device in {
-                    f"cuda:{idx}" for idx in range(self.accelerator.num_processes)
-                }:
-                    warnings.warn(
-                        f"The requested device {vllm_device} is also used for training. This may lead to unexpected "
-                        "behavior. It is recommended to use a dedicated device for vLLM."
-                    )
-                # vLLM is not compatible with accelerate. So we need to patch it to make sure we can (1) place the vLLM
-                # model on the desired device (world_size_patch) and (2) avoid a test that is not designed for our
-                # setting (profiling_patch).
-                world_size_patch = patch(
-                    "torch.distributed.get_world_size", return_value=1
-                )
-                profiling_patch = patch(
-                    "vllm.worker.worker.Worker._assert_memory_footprint_increased_during_profiling",
-                    return_value=None,
-                )
-                with world_size_patch, profiling_patch:
-                    print("vllm is running on: ", vllm_device)
-                    self.llm = LLM(
-                        model=model.name_or_path,
-                        device=vllm_device,
-                        gpu_memory_utilization=self.args.vllm_gpu_memory_utilization,
-                        dtype=torch.bfloat16,
-                        # Automatic Prefix Caching caches the KV cache of existing queries, so that a new query can
-                        # directly reuse the KV cache if it shares the same prefix with one of the existing queries.
-                        # This is particularly useful here because we generate completions from the same prompts.
-                        enable_prefix_caching=True,
-                        enforce_eager=True,
-                        mm_processor_kwargs=(
-                            {
-                                "max_pixels": max_pixels,
-                                "min_pixels": min_pixels,
-                            }
-                            if "Qwen2-VL" in model_id or "Qwen2.5-VL" in model_id
-                            else None
-                        ),
-                        max_model_len=args.max_prompt_length + args.max_completion_length,
-                    )
-                self.sampling_params = SamplingParams(
-                    temperature=args.temperature,
-                    max_tokens=self.max_completion_length,
-                )
-
-            self._last_loaded_step = 0  # tag to avoid useless loading during grad accumulation
-
-            # When using vLLM, the main process is responsible for loading the model weights. This can cause process
-            # desynchronization and seems to lead to DeepSpeed hanging during initialization. To prevent this, we
-            # synchronize all processes after vLLM has been fully initialized.
-            self.accelerator.wait_for_everyone()
-        else:
-            raise ValueError(
-                "GRPOVLLMTrainerModified only supports vllm generation, please set --use_vllm True"
-            )
 
         if self.ref_model is not None:
             if self.is_deepspeed_enabled:
@@ -414,6 +335,16 @@ class Qwen2VLGRPOVLLMTrainerModified(Trainer):
             per_token_logps.append(token_log_prob)
         return torch.stack(per_token_logps)
 
+    def _send_weights_to_vllm(self, state_dict):
+        """send model weights to vllm node."""
+        # TODO
+        pass
+
+    def _post_completions_vllm(self, inputs):
+        """send inputs to vllm node, and get completions from vllm node."""
+        # TODO
+        pass
+
     # Trainer "prepares" the inputs before calling `compute_loss`. It converts to tensor and move to device.
     # Since we preprocess the data in `compute_loss`, we need to override this method to skip this step.
     def _prepare_inputs(
@@ -440,77 +371,22 @@ class Qwen2VLGRPOVLLMTrainerModified(Trainer):
             prompt_ids = prompt_ids[:, -self.max_prompt_length :]
             prompt_mask = prompt_mask[:, -self.max_prompt_length :]
 
-        if self.args.use_vllm:
-            # First, have main process load weights if needed
-            if self.state.global_step != self._last_loaded_step:
-                with unwrap_model_for_generation(
-                    self.model,
-                    self.accelerator,
-                    gather_deepspeed3_params=False,  # TODO: fix this, self.args.ds3_gather_for_generation,
-                ) as unwrapped_model:
-                    if is_compiled_module(unwrapped_model):
-                        state_dict = unwrapped_model._orig_mod.state_dict()
-                    else:
-                        state_dict = unwrapped_model.state_dict()
-                if self.accelerator.is_main_process:
-                    llm_model = (
-                        self.llm.llm_engine.model_executor.driver_worker.model_runner.model
-                    )
-                    llm_model.load_weights(state_dict.items())
-                self._last_loaded_step = self.state.global_step
-
-            # Generate completions using vLLM: gather all prompts and use them in a single call in the main process
-            all_prompts_text = gather_object(prompts_text)
-            all_images = gather_object(images)
-            # group into pairs
-            all_multimodal_inputs = []
-            for prompt, image in zip(all_prompts_text, all_images):
-                for _ in range(self.num_generations):
-                    all_multimodal_inputs.append({"prompt": prompt, "multi_modal_data": {"image": image}})
-
-            # NOTE: The sampling should be divided into `num_generations` batches, 
-            # otherwise the sampling of each prompt will be the same
-            all_completion_ids = [None] * len(all_multimodal_inputs)
-            for i in range(self.num_generations):
-                # Get the inputs for the current batch
-                batch_inputs = [all_multimodal_inputs[j] for j in range(i, len(all_multimodal_inputs), self.num_generations)]
-                if self.accelerator.is_main_process:
-                    outputs = self.llm.generate(
-                        batch_inputs,
-                        sampling_params=self.sampling_params,
-                        use_tqdm=False,
-                    )
-                    batch_completion_ids = [out.token_ids for completions in outputs for out in completions.outputs]
-                    print("batch_completion_ids:", batch_completion_ids)
+        # Firstly, send model weights to vllm sample node if model has been updated
+        if self.state.global_step != self._last_loaded_step:
+            with unwrap_model_for_generation(
+                self.model,
+                self.accelerator,
+                gather_deepspeed3_params=False,  # TODO: fix this, self.args.ds3_gather_for_generation,
+            ) as unwrapped_model:
+                if is_compiled_module(unwrapped_model):
+                    state_dict = unwrapped_model._orig_mod.state_dict()
                 else:
-                    batch_completion_ids = [None] * len(batch_inputs)
-                # Place the results back into their original positions
-                for idx, completion_id in enumerate(batch_completion_ids):
-                    all_completion_ids[i + idx * self.num_generations] = completion_id
-            # Final completion IDs
-            completion_ids = all_completion_ids
-            # print("completion_ids:", [len(ids) for ids in completion_ids])
-            
-            completion_ids = broadcast_object_list(completion_ids, from_process=0)
-            process_slice = slice(
-                self.accelerator.process_index * len(prompts) * self.num_generations,
-                (self.accelerator.process_index + 1) * len(prompts) * self.num_generations,
-            )
-            completion_ids = completion_ids[process_slice]
-            # Pad the completions, and concatenate them with the prompts
-            completion_ids = [torch.tensor(ids, device=device) for ids in completion_ids]
-            completion_ids = pad(
-                completion_ids, padding_value=self.processing_class.pad_token_id
-            )
-            prompt_ids = prompt_ids.repeat_interleave(self.num_generations, dim=0)
-            prompt_completion_ids = torch.cat([prompt_ids, completion_ids], dim=1)
+                    state_dict = unwrapped_model.state_dict()
+            if self.accelerator.is_main_process:
+                self._send_weights_to_vllm(state_dict)
 
-            prompt_length = prompt_ids.size(1)
-            prompt_ids = prompt_completion_ids[:, :prompt_length]
-            completion_ids = prompt_completion_ids[:, prompt_length:]
-            prompt_mask = prompt_mask.repeat_interleave(self.num_generations, dim=0)
-        else:
-            raise ValueError("Only vLLM generation is supported in this version ")
+        # Secondly, send request to vllm sample node to generate completions
+        completion_ids = self._post_completions_vllm(inputs)
 
         # below are the same with yifan's code
         # Mask everything after the first EOS token

@@ -3,32 +3,15 @@ import json
 import tempfile
 import torch
 from vllm import LLM, SamplingParams
-from datasets import load_dataset, load_from_disk
-from trl.data_utils import (
-    apply_chat_template,
-    is_conversational,
-    maybe_apply_chat_template,
-)
+from datasets import load_dataset
 from transformers import (
-    AriaForConditionalGeneration,
-    AriaProcessor,
-    AutoModelForCausalLM,
-    AutoModelForSequenceClassification,
     AutoProcessor,
-    AutoTokenizer,
-    GenerationConfig,
-    PreTrainedModel,
-    PreTrainedTokenizerBase,
-    Qwen2VLForConditionalGeneration,
-    Qwen2_5_VLForConditionalGeneration,
-    Trainer,
-    TrainerCallback,
-    is_wandb_available,
 )
 from qwen_vl_utils import process_vision_info
 
 
-model_name = "/apdcephfs_gy2/share_302735770/stephenruan/code/src/Qwen2-VL-2B-Instruct"
+# model_name = "/apdcephfs_gy2/share_302735770/stephenruan/code/src/Qwen2-VL-2B-Instruct"
+model_name = "/apdcephfs_gy2/share_302735770/stephenruan/code/src/Qwen2.5-VL-3B-Instruct"
 dataset_name="/apdcephfs_gy2/share_302735770/stephenruan/data/lmms-lab___multimodal-open-r1-8k-verified"
 
 # Load the dataset
@@ -68,6 +51,7 @@ llm = LLM(
     enable_prefix_caching=True,
     enforce_eager=True,
     max_model_len=8192,
+    trust_remote_code=True
 )
 sampling_params = SamplingParams(
     temperature=1,

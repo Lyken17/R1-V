@@ -34,7 +34,7 @@ torchrun \
     --output_dir ${OUTPUT_DIR} \
     --model_name_or_path ${MODEL_NAME} \
     --dataset_name ${DATASET_NAME} \
-    --max_prompt_length 12000 \
+    --max_prompt_length 4096 \
     --max_completion_length 2048 \
     --per_device_train_batch_size ${PER_DEVICE_BATCH_SIZE} \
     --gradient_accumulation_steps ${GRADIENT_ACC} \
@@ -52,7 +52,7 @@ torchrun \
     --report_to tensorboard \
     --use_vllm true \
     --temperature 1.0 \
-    --num_generations 4 \
+    --num_generations 8 \
     --vllm_device "cuda:7" \
     --vllm_gpu_memory_utilization 0.8 \
     2>&1 | tee "${OUTPUT_DIR}/training_log.txt"
