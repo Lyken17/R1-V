@@ -253,7 +253,13 @@ class Qwen2VLGRPOVLLMTrainerModified(Trainer):
             args.max_completion_length
         )  # = |o_i| in the GRPO paper
         self.num_generations = args.num_generations  # = G in the GRPO paper
-
+        self.generation_config = GenerationConfig(
+            max_new_tokens=self.max_completion_length,
+            do_sample=True,
+            temperature=1,  # HACK
+            num_return_sequences=self.num_generations,
+            pad_token_id=pad_token_id,
+        )
         self.beta = args.beta
 
         # The trainer estimates the number of FLOPs (floating-point operations) using the number of elements in the
@@ -464,39 +470,62 @@ class Qwen2VLGRPOVLLMTrainerModified(Trainer):
             all_images = gather_object(images)
             # group into pairs
             all_multimodal_inputs = []
-            for prompt, image in zip(all_prompts_text, all_images):
-                for _ in range(self.num_generations):
-                    all_multimodal_inputs.append({"prompt": prompt, "multi_modal_data": {"image": image}})
 
-            # NOTE: The sampling should be divided into `num_generations` batches, 
-            # otherwise the sampling of each prompt will be the same
-            all_completion_ids = [None] * len(all_multimodal_inputs)
-            for i in range(self.num_generations):
-                # Get the inputs for the current batch
-                batch_inputs = [all_multimodal_inputs[j] for j in range(i, len(all_multimodal_inputs), self.num_generations)]
+            use_naive_loop_sampling = False
+            if use_naive_loop_sampling:
+                # in this implementation, one sample will repeat `self.num_generations` times
+                # it's not a efficient implementation, but safe to keep sampling diversity
+                for prompt, image in zip(all_prompts_text, all_images):
+                    for _ in range(self.num_generations):
+                        all_multimodal_inputs.append({"prompt": prompt, "multi_modal_data": {"image": image}})
+                all_completion_ids = [None] * len(all_multimodal_inputs)
+                for i in range(self.num_generations):
+                    # Get the inputs for the current batch
+                    batch_inputs = [all_multimodal_inputs[j] for j in range(i, len(all_multimodal_inputs), self.num_generations)]
+                    if self.accelerator.is_main_process:
+                        outputs = self.llm.generate(
+                            batch_inputs,
+                            sampling_params=self.sampling_params,
+                            use_tqdm=False,
+                        )
+                        batch_completion_ids = [out.token_ids for completions in outputs for out in completions.outputs]
+                    else:
+                        batch_completion_ids = [None] * len(batch_inputs)
+                    # Place the results back into their original positions
+                    for idx, completion_id in enumerate(batch_completion_ids):
+                        all_completion_ids[i + idx * self.num_generations] = completion_id
+                # Final completion IDs
+                completion_ids = all_completion_ids
+
+            # 2. Refer to TobiasLee's implementation suggestions
+            # this is a better implementation for vLLM sampling.
+            for prompt, image in zip(all_prompts_text, all_images):
+                all_multimodal_inputs.append({"prompt": prompt, "multi_modal_data": {"image": image}})
+            # Create sampling params with num_generations
+            if self.accelerator.is_main_process:
+                # Clone to avoid modifying original params
+                sampling_params = copy.deepcopy(self.sampling_params)
+                sampling_params.n = self.num_generations
+                # Single generate call with all prompts
                 if self.accelerator.is_main_process:
                     outputs = self.llm.generate(
-                        batch_inputs,
-                        sampling_params=self.sampling_params,
+                        all_multimodal_inputs,
+                        sampling_params=sampling_params,
                         use_tqdm=False,
                     )
-                    batch_completion_ids = [out.token_ids for completions in outputs for out in completions.outputs]
-                    print("batch_completion_ids:", batch_completion_ids)
-                else:
-                    batch_completion_ids = [None] * len(batch_inputs)
-                # Place the results back into their original positions
-                for idx, completion_id in enumerate(batch_completion_ids):
-                    all_completion_ids[i + idx * self.num_generations] = completion_id
-            # Final completion IDs
-            completion_ids = all_completion_ids
-            # print("completion_ids:", [len(ids) for ids in completion_ids])
+                # Flatten outputs: [prompt1_gen1, prompt1_gen2, ..., prompt2_gen1, prompt2_gen2, ...]
+                completion_ids = [out.token_ids for completion in outputs for out in completion.outputs]
+            else:
+                completion_ids = [None] * len(all_multimodal_inputs) * self.num_generations
             
+            # broadcast and slice
             completion_ids = broadcast_object_list(completion_ids, from_process=0)
             process_slice = slice(
                 self.accelerator.process_index * len(prompts) * self.num_generations,
                 (self.accelerator.process_index + 1) * len(prompts) * self.num_generations,
             )
             completion_ids = completion_ids[process_slice]
+
             # Pad the completions, and concatenate them with the prompts
             completion_ids = [torch.tensor(ids, device=device) for ids in completion_ids]
             completion_ids = pad(

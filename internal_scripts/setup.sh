@@ -5,11 +5,13 @@ conda create -n r1v --clone base -y
 source $(conda info --base)/etc/profile.d/conda.sh
 conda activate r1v
 
-# Install the packages in open-r1-multimodal .
-cd src/open-r1-multimodal # We edit the grpo.py and grpo_trainer.py in open-r1 repo.
+# Install the packages in r1-v .
+cd src/r1-v 
 pip install -e ".[dev]"
 
 # Addtional modules
+# fix transformers version
+pip install git+https://github.com/huggingface/transformers.git@336dc69d63d56f232a183a3e7f52790429b871ef
 pip install wandb==0.18.3
 pip install tensorboardx    # not neccessary
 pip install qwen_vl_utils

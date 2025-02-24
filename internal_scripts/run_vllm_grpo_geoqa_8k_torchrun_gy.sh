@@ -1,25 +1,26 @@
-work_dir=/apdcephfs_cq8/share_1611098/ruanzheng/code/src/R1-V/src/open-r1-multimodal
+work_dir=/apdcephfs_cq8/share_1611098/ruanzheng/code/src/R1-V/src/r1-v
 cd $work_dir
 
 set -x
 
 PER_DEVICE_BATCH_SIZE=${PER_DEVICE_BATCH_SIZE:-1}
-GRADIENT_ACC=${GRADIENT_ACC:-2}
+GRADIENT_ACC=${GRADIENT_ACC:-8}
 
 export PYTHONPATH="${PYTHONPATH}:$(pwd)"
 # export PYTHONPATH=src:$PYTHONPATH
 
 # ==== 设置输出路径 ==== #
-RUN_NAME="qwen_2_vl_2b_vllm_grpo_r1m_8k_gy_lr1e-6_bs1_ga2_ep2_torchrun"
+RUN_NAME="qwen_2_vl_7b_vllm_grpo_geoqa_8k_gy_lr1e-6_bs1_ga8_ep2_torchrun"
 OUTPUT_DIR="/apdcephfs_cq8/share_1611098/ruanzheng/code/src/R1-V/output/${RUN_NAME}"
 if [ ! -d "$OUTPUT_DIR" ]; then
  mkdir -p "$OUTPUT_DIR"
 fi
 # ==== 选择模型、数据集和deepspeed配置 ==== #
-MODEL_NAME="/apdcephfs_gy2/share_302735770/stephenruan/code/src/Qwen2-VL-2B-Instruct"
-# MODEL_NAME="/apdcephfs_gy2/share_302735770/stephenruan/code/src/Qwen2-VL-7B-Instruct"
-DATASET_NAME="/apdcephfs_gy2/share_302735770/stephenruan/data/lmms-lab___multimodal-open-r1-8k-verified"
-DS_CONFIG="/apdcephfs_cq8/share_1611098/ruanzheng/code/src/R1-V/src/open-r1-multimodal/local_scripts/zero1.json"
+# MODEL_NAME="/apdcephfs_gy2/share_302735770/stephenruan/code/src/Qwen2-VL-2B-Instruct"
+MODEL_NAME="/apdcephfs_gy2/share_302735770/stephenruan/code/src/Qwen2-VL-7B-Instruct"
+# MODEL_NAME="/apdcephfs_gy2/share_302735770/stephenruan/code/src/Qwen2.5-VL-3B-Instruct"
+DATASET_NAME="/apdcephfs_gy2/share_302735770/stephenruan/data/leonardPKU___geoqa_r1_v_train_8_k"
+DS_CONFIG="/apdcephfs_cq8/share_1611098/ruanzheng/code/src/R1-V/internal_scripts/zero1.json"
 export DEBUG_MODE="true" # Enable Debug if you want to see the rollout of model during RL
 export LOG_PATH="${OUTPUT_DIR}/debug_log.txt"   # Only valid in single machine mode
 
@@ -42,9 +43,9 @@ torchrun \
     --bf16 True \
     --gradient_checkpointing true \
     --attn_implementation flash_attention_2 \
-    --min_pixels 1568 \
-    --max_pixels 200704 \
-    --num_train_epochs 1 \
+    --min_pixels 3136 \
+    --max_pixels 501760 \
+    --num_train_epochs 2 \
     --run_name ${RUN_NAME} \
     --save_steps 200 \
     --save_total_limit 3 \
@@ -55,4 +56,5 @@ torchrun \
     --num_generations 8 \
     --vllm_device "cuda:7" \
     --vllm_gpu_memory_utilization 0.8 \
+    --deepspeed ${DS_CONFIG} \
     2>&1 | tee "${OUTPUT_DIR}/training_log.txt"
