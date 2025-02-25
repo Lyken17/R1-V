@@ -86,6 +86,10 @@ conda activate r1-v
 bash setup.sh
 ```
 
+> [!NOTE] 
+> If you meet bug when running the script, first try align your environments with `./src/requirements.txt`
+
+
 ### Supported Models
 
 1. Qwen2-VL
