@@ -1,23 +1,21 @@
-# 内部分支使用说明
-- 基础环境镜像：mirrors.tencent.com/timurhe-ns/hunyuan-cuda12.2-torch2.5.1-flashattn2.7.4.post1-vllm0.7.1-python3.12.2-gcc12:latest
-- [使用文档](https://iwiki.woa.com/p/4013620298)
-- [实验记录（待更新）](https://iwiki.woa.com/p/4013620373)
+## New Features
+### 2025.02.24
+The vllm sampling method has been optimized to `SamplingParams(n=num_generations)`, eliminating the need for double for-loop sampling. Currently, compared to the training method without vllm, the speed can be increased by approximately 30% (experiment on geoqa-8k):
 
-## 新特性
-### 2025.02.23
-1. vllm采样方式已优化为 `SamplingParams(n=num_generations)`，不再需要双重for循环采样。
-2. 多机GRPOTrainer实现暂不继续开发。
+Training used `Qwen2VLGRPOVLLMTrainerModified`:
+![training used Qwen2VLGRPOVLLMTrainerModified](images/vllm_grpo_trainer_modified_log.jpg)
+Training used `Qwen2VLGRPOTrainer`:
+![training used Qwen2VLGRPOTrainer](images/grpo_trainer_log.jpg)
 
 ### 2025.02.13
-1. 为方便管理，内部环境的启动脚本已全部移到 `internal_scripts/` 下。
-2. vllm_grpo_trainer启动脚本样例：`internal_scripts/run_vllm_grpo_clevr_torchrun_gy.sh`
-    - 目前不支持多机vllm
-    - 新的Trainer为：`Qwen2VLGRPOVLLMTrainerModified`（在 `src/open-r1-multimodal/src/open_r1/trainer/vllm_grpo_trainer_modified.py`）中，不再使用 `RepeatRandomSampler` 以避免steps倍增问题，在单个原始batch内完成各prompt的多次采样和计算loss，即保持与 `Qwen2VLGRPOTrainer` 一致的逻辑；同时，不再要求num_generations必须保持与num_gpus一致
-    - 新的Trainer已替代原 `Qwen2VLGRPOVLLMTrainer` 在 `src/open-r1-multimodal/src/open_r1/grpo.py` 加载
-    - vllm采样逻辑已修正
+- The new vllm Trainer is: `Qwen2VLGRPOVLLMTrainerModified` (implemented in `src/r1-v/src/open_r1/trainer/vllm_grpo_trainer_modified.py`), which no longer uses `RepeatRandomSampler` to avoid the step multiplication problem, and completes the rollout of each prompt within a single original batch, maintaining the same logic as `Qwen2VLGRPOTrainer`;
+- It is no longer required that num_generations must be consistent with num_gpus
+- Supports Qwen2.5-VL
+- The new Trainer has replaced the original `Qwen2VLGRPOVLLMTrainer` loaded in `src/r1-v/src/open_r1/grpo.py`
 
 ----
-（以下是原README）
+(The following is the original README)
+
 
 # R1-V: Reinforcing Super Generalization Ability in Vision Language Models with Less Than $3
 
