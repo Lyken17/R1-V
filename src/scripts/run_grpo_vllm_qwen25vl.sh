@@ -1,7 +1,9 @@
 #!/bin/bash
 
+
 # The latest vllm==0.7.3 is required for this script: pip3 install vllm==0.7.3
-# The latest transformers is required too, install by: pip3 install git+https://github.com/huggingface/transformers.git
+# The latest transformers is required too, install by: pip install git+https://github.com/huggingface/transformers.git@a40f1ac602fe900281722254c52ce3773f28eb0e
+
 
 
 export DEBUG_MODE="true"
@@ -14,7 +16,7 @@ if [ ! -d "$OUTPUT_DIR" ]; then
  mkdir -p "$OUTPUT_DIR"
 fi
 RUN_NAME="RUN_NAME_FOR_WANDB"
-DS_CONFIG="src/r1-v/local_scripts/zero1_no_optimizer.json"
+DS_CONFIG="src/r1-v/local_scripts/zero1_no_optimizer.json"  # Note that other zero setting would meet bugs related to vllm at current stage.
 
 # NOTE: you are expected to use X + 1 cards for X training proc and 1 vLLM proc 
 # e.g., the visible devices should be 0,1,2,3,4 for 5 cards, and  --nproc_per_node="4"
