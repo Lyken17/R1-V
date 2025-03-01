@@ -16,14 +16,6 @@
 > Welcome Ideas and Contribution. Stay tuned!
 
 
-1. We firstly reveal that **Reinforcement Learning with Verifiable Rewards (RLVR)** outperforms chain-of-thought supervised fine-tuning (CoT-SFT) in both **effectiveness and out-of-distribution (OOD) robustness** for vision language models.
-
-2. In our experiment, we **incentivize** VLMs to learn **generalizable** visual counting abilities, rather than overfitting to the training set.
-
-3. The 2B model outperforms the 72B model in OOD tests within just **100** training steps.
-
-4. The training was conducted on 8 A100 GPUs for **30 minutes, costing $2.62**.
-
 **Blogs:**
 
 
@@ -55,6 +47,7 @@
 
 ### Updates
 
+- 2025-02-27: vLLM trainer supports Qwen2.5-VL now, refer to `./src/scripts/run_grpo_vllm_qwen25vl.sh` for script and env update.
 - 2025-02-21: We write a [blog post](https://deepagent.notion.site/rlvr-in-vlms) summarizing the main findings and questions in our visual RLVR experimetns, check it out!
 - 2025-02-12: We fixed the batched decoding error. The orignial RL training scirpt now is 3x speeded up.
 - 2025-02-12: R1-V now supports vLLM to accelerate training (`pip install vllm==0.7.2` before use) and SFT.
@@ -63,6 +56,7 @@
 - 2025-02-03: We upload the training codebase.
 - 2025-02-03: We curate and upload some verified Deepseek-R1 visual reasoning traces with some special tricks (see `R1-V/src/distill_r1/`). Current training code does not rely on it, feel free to explore.
 - 2025-02-03: We release the R1-V repo.
+
 
 ### For contributors
 - Our top development priority is addressing the issues marked with `help wanted` labels, and we welcome ideas/PRs from the community to help solve them.
@@ -150,7 +144,7 @@ torchrun --nproc_per_node="8" \
 > [!NOTE] 
 > 1. To reproduce the result, keep the per_device_train_batch_size to 1 for now, as there is a revealed bug about batched training. See the [reproduction report](https://github.com/Deep-Agent/R1-V/issues/4#issuecomment-2633348354) here. We realize it is important for effiency and are working on solving it with the community.
 > 2. If you meet **OOM Error**, you can try reduce `--num_generations`
-> 3. To use vLLM to speed up, please refer to this [script](https://github.com/Deep-Agent/R1-V/blob/main/src/scripts/run_grpo_vllm.sh), currently it only supports Qwen2VL model series.
+> 3. To use vLLM to speed up, please refer to this [script](https://github.com/Deep-Agent/R1-V/blob/main/src/scripts/run_grpo_vllm.sh).
 
 
 ### SFT
@@ -241,7 +235,6 @@ We sincerely thank [DeepSeek](https://github.com/deepseek-ai/DeepSeek-R1), [Open
   year         = {2025}
 }
 ```
-
 
 
 
