@@ -16,14 +16,6 @@
 > Welcome Ideas and Contribution. Stay tuned!
 
 
-1. We firstly reveal that **Reinforcement Learning with Verifiable Rewards (RLVR)** outperforms chain-of-thought supervised fine-tuning (CoT-SFT) in both **effectiveness and out-of-distribution (OOD) robustness** for vision language models.
-
-2. In our experiment, we **incentivize** VLMs to learn **generalizable** visual counting abilities, rather than overfitting to the training set.
-
-3. The 2B model outperforms the 72B model in OOD tests within just **100** training steps.
-
-4. The training was conducted on 8 A100 GPUs for **30 minutes, costing $2.62**.
-
 **Blogs:**
 
 
@@ -55,7 +47,7 @@
 
 ### Updates
 
-- 2025-02-27: vLLM trainer supports Qwen2.5-VL now.
+- 2025-02-27: vLLM trainer supports Qwen2.5-VL now, refer to `./src/scripts/run_grpo_vllm_qwen25vl.sh` for script and env update.
 - 2025-02-21: We write a [blog post](https://deepagent.notion.site/rlvr-in-vlms) summarizing the main findings and questions in our visual RLVR experimetns, check it out!
 - 2025-02-12: We fixed the batched decoding error. The orignial RL training scirpt now is 3x speeded up.
 - 2025-02-12: R1-V now supports vLLM to accelerate training (`pip install vllm==0.7.2` before use) and SFT.
