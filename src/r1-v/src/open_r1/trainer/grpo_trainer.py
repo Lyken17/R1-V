@@ -170,6 +170,7 @@ class Qwen2VLGRPOTrainer(Trainer):
         # Trained model
         model_init_kwargs = args.model_init_kwargs or {}
         model_init_kwargs["attn_implementation"] = attn_implementation
+        model_init_kwargs["trust_remote_code"] = True
         if isinstance(model, str):
             model_id = model
             torch_dtype = model_init_kwargs.get("torch_dtype")
@@ -191,6 +192,11 @@ class Qwen2VLGRPOTrainer(Trainer):
                 model = Qwen2VLForConditionalGeneration.from_pretrained(model, **model_init_kwargs)
             elif "Qwen2.5-VL" in model_id:
                 model = Qwen2_5_VLForConditionalGeneration.from_pretrained(model, **model_init_kwargs)
+            elif "vila" in model_id.lower():
+                if "low_cpu_mem_usage" in model_init_kwargs:
+                    model_init_kwargs.pop("low_cpu_mem_usage")
+                # print("[DEBUG] initializing VILA with kwargs", model_init_kwargs)
+                model = AutoModelForCausalLM.from_pretrained(model, **model_init_kwargs)
             elif "Aria" in model_id:
                 model_init_kwargs.pop("use_cache")
                 model = AriaForConditionalGeneration.from_pretrained(model, **model_init_kwargs)
@@ -227,12 +233,13 @@ class Qwen2VLGRPOTrainer(Trainer):
 
         # Processing class
         if processing_class is None:
-            if "Qwen2-VL" in model_id or "Qwen2.5-VL" in model_id or "Aria" in model_id:
-                processing_class = AutoProcessor.from_pretrained(model_id)
+            if "Qwen2-VL" in model_id or "Qwen2.5-VL" in model_id or "Aria" in model_id or "vila" in model_id.lower():
+                processing_class = AutoProcessor.from_pretrained(model_id, trust_remote_code=True)
                 pad_token_id = processing_class.tokenizer.pad_token_id
                 processing_class.pad_token_id = pad_token_id
                 processing_class.eos_token_id = processing_class.tokenizer.eos_token_id
                 if "Qwen" in model_id or "Qwen2.5-VL" in model_id:
+                    # NVILA does not have a max_pixels and min_pixels
                     processing_class.image_processor.max_pixels = max_pixels
                     processing_class.image_processor.min_pixels = min_pixels
             else:
@@ -334,8 +341,13 @@ class Qwen2VLGRPOTrainer(Trainer):
 
 
     # Get the per-token log probabilities for the completions for the model and the reference model
-    def _get_per_token_logps(self, model, input_ids, attention_mask, pixel_values, image_grid_thw):
-        logits = model(input_ids, attention_mask=attention_mask, pixel_values=pixel_values, image_grid_thw=image_grid_thw).logits  # (B, L, V)
+    def _get_per_token_logps(self, model, input_ids, attention_mask, pixel_values=None, image_grid_thw=None, media=None, media_config=None, **kwargs):
+        if media is not None and media_config is not None:
+            # NVILA case
+            print(f"[DEBUG5] token: {self.processing_class.batch_decode(input_ids)} media: {len(media['image'])}")
+            logits = model(input_ids, attention_mask=attention_mask, media=media, media_config=media_config).logits  # (B, L, V)
+        else:
+            logits = model(input_ids, attention_mask=attention_mask, pixel_values=pixel_values, image_grid_thw=image_grid_thw).logits  # (B, L, V)
         logits = logits[:, :-1, :]  # (B, L-1, V), exclude the last logit: it corresponds to the next token pred
         input_ids = input_ids[:, 1:]  # (B, L-1), exclude the first input ID since we don't have logits for it
         # Compute the log probabilities for the input tokens. Use a loop to reduce memory peak.
@@ -357,23 +369,65 @@ class Qwen2VLGRPOTrainer(Trainer):
             raise ValueError("The GRPOTrainer does not support returning outputs")
 
         prompts = [x["prompt"] for x in inputs]
-        prompts_text = [maybe_apply_chat_template(example, self.processing_class)["prompt"] for example in inputs]
+        # prompts_text = [maybe_apply_chat_template(example, self.processing_class)["prompt"] for example in inputs]
         images = [x["image"] for x in inputs]
-        prompt_inputs = self.processing_class(
-            text=prompts_text,
-            images=images,
-            return_tensors="pt",
-            padding=True,
-            padding_side="left",
-            add_special_tokens=False,
-        )
-        prompt_inputs = super()._prepare_inputs(prompt_inputs)
+        # TODO(ligeng): sync with Qwen Processor
+        # print(f"[DEBUG2] {len(images)=}, {inputs=} {prompts_text=} {images=}", flush=True)
+        if "vila" in str(model).lower():
+            # fix the format diff btw NVILA and Qwen
+            all_convs = []
+            for inp in inputs:
+                single_conv = [] 
+                for prompt in inp["prompt"]:
+                    text = {
+                        "from": "human" if prompt["role"] == "user" else "assistant",
+                        "value": []
+                    }
+                    for content in prompt["content"]:
+                        if content["type"] == "image":
+                            text["value"].append(inp["image"])
+                        elif content["type"] == "text":
+                            text["value"].append(content["text"])
+                    single_conv.append(text)
+                all_convs.append(single_conv)
+            
+            print(f"[DEBUG3] vila {inputs=} apply_chat_template: {all_convs=}")
+            prompt_inputs = self.processing_class(all_convs)
+            print(f"[DEBUG3.5] vila prompt_inputs_ids: {self.processing_class.batch_decode(prompt_inputs['input_ids'])}")
+            # exit(0)
+            prompt_inputs["attention_mask"] = torch.ones_like(prompt_inputs.input_ids, dtype=torch.bool)
+
+            # TODO(ligeng): why vila input does not work with __prepare_input()
+            # move to same device as models, reference from trainer.py/def _prepare_input()
+            def move_data_to_device(data):
+                kwargs = {"device": self.args.device}
+                if self.is_deepspeed_enabled and (torch.is_floating_point(data) or torch.is_complex(data)):
+                    kwargs.update({"dtype": self.accelerator.state.deepspeed_plugin.hf_ds_config.dtype()})
+                return data.to(**kwargs)
+            prompt_inputs.input_ids = move_data_to_device(prompt_inputs.input_ids)
+            prompt_inputs.attention_mask = move_data_to_device(prompt_inputs.attention_mask)
+            if "image" in prompt_inputs.media:
+                prompt_inputs.media["image"] = [move_data_to_device(img) for img in prompt_inputs.media["image"]]
+            # video is not supported yet        
+        else:
+            prompts_text = [maybe_apply_chat_template(example, self.processing_class)["prompt"] for example in inputs]
+            prompt_inputs = self.processing_class(
+                text=prompts_text,
+                images=images,
+                return_tensors="pt",
+                padding=True,
+                padding_side="left",
+                add_special_tokens=False,
+            )
+            prompt_inputs = super()._prepare_inputs(prompt_inputs)
 
         prompt_ids, prompt_mask = prompt_inputs["input_ids"], prompt_inputs["attention_mask"]
-        pixel_values = prompt_inputs["pixel_values"]
-        image_grid_thw = prompt_inputs["image_grid_thw"]
+        pixel_values = prompt_inputs.get("pixel_values", None)
+        image_grid_thw = prompt_inputs.get("image_grid_thw", None)
+        # field for VILA model
+        media = prompt_inputs.get("media", None)
+        media_config = prompt_inputs.get("media_config", None)
 
-        
         if self.max_prompt_length is not None:
             prompt_ids = prompt_ids[:, -self.max_prompt_length :]
             prompt_mask = prompt_mask[:, -self.max_prompt_length :]
@@ -381,11 +435,15 @@ class Qwen2VLGRPOTrainer(Trainer):
         # Generate completions
         with unwrap_model_for_generation(model, self.accelerator) as unwrapped_model:
             prompt_completion_ids = unwrapped_model.generate(**prompt_inputs, generation_config=self.generation_config)
-
             prompt_length = prompt_ids.size(1)
             prompt_ids = prompt_completion_ids[:, :prompt_length]
             completion_ids = prompt_completion_ids[:, prompt_length:]
             prompt_mask = prompt_mask.repeat_interleave(self.num_generations, dim=0)
+
+        # NOTE(ligeng): Inference tensors cannot be saved for backward. To work around you can make a clone to get a normal tensor and use it in autograd.
+        prompt_completion_ids = prompt_completion_ids.clone()
+        print(f"[DEBUG3.6] vila prompt_completion_ids: {self.processing_class.batch_decode(prompt_completion_ids, skip_special_tokens=True)}")
+        exit(0)
 
         # Mask everything after the first EOS token
         is_eos = completion_ids == self.processing_class.eos_token_id
@@ -397,19 +455,25 @@ class Qwen2VLGRPOTrainer(Trainer):
 
         # Concatenate prompt_mask with completion_mask for logit computation
         attention_mask = torch.cat([prompt_mask, completion_mask], dim=1)  # (B*G, P+C)
-        pixel_values = prompt_inputs["pixel_values"].repeat(self.num_generations, 1)
-        image_grid_thw = prompt_inputs["image_grid_thw"].repeat_interleave(self.num_generations, dim=0)
-
-        per_token_logps = self._get_per_token_logps(model, prompt_completion_ids, attention_mask, pixel_values, image_grid_thw)
+        if pixel_values is not None and image_grid_thw is not None:
+            pixel_values = prompt_inputs["pixel_values"].repeat(self.num_generations, 1)
+            image_grid_thw = prompt_inputs["image_grid_thw"].repeat_interleave(self.num_generations, dim=0)
+        per_token_logps = self._get_per_token_logps(model, prompt_completion_ids, attention_mask, 
+            pixel_values=pixel_values, image_grid_thw=image_grid_thw, media=media, media_config=media_config
+        )
         # Get rid of the prompt (-1 because of the shift done in get_per_token_logps)
-        per_token_logps = per_token_logps[:, prompt_length - 1 :]
+        if "vila" in str(model).lower():
+            # TODO(ligeng): align with qwen, output the prefill token logprobs as well.
+            pass            
+        else:
+            per_token_logps = per_token_logps[:, prompt_length - 1 :]
 
         with torch.inference_mode():
             if self.ref_model is not None:
-                ref_per_token_logps = self._get_per_token_logps(self.ref_model, prompt_completion_ids, attention_mask, pixel_values, image_grid_thw)
+                ref_per_token_logps = self._get_per_token_logps(self.ref_model, prompt_completion_ids, attention_mask, pixel_values=pixel_values, image_grid_thw=image_grid_thw, media=media, media_config=media_config)
             else:
                 with self.accelerator.unwrap_model(model).disable_adapter():
-                    ref_per_token_logps = self._get_per_token_logps(model, prompt_completion_ids, attention_mask, pixel_values, image_grid_thw)
+                    ref_per_token_logps = self._get_per_token_logps(model, prompt_completion_ids, attention_mask, pixel_values=pixel_values, image_grid_thw=image_grid_thw, media=media, media_config=media_config)
         ref_per_token_logps = ref_per_token_logps[:, prompt_length - 1 :]
 
         # Compute the KL divergence between the model and the reference model
