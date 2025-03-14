@@ -1,6 +1,10 @@
 #! /bin/bash
 set -e 
 
+# Disable wandb logging
+export WANDB_MODE="disabled"
+
+
 export DEBUG_MODE="true" # Enable Debug if you want to see the rollout of model during RL
 export LOG_PATH="./debug_log_2b.txt"
 
@@ -40,7 +44,9 @@ echo "MASTER_PORT = $MASTER_PORT"
 #######################################################################
 
 model_name_or_path=Qwen/Qwen2-VL-2B-Instruct
-model_name_or_path=/home/ligengz/workspace/VILA-main/NVILA-Lite-2B-hf-preview
+# model_name_or_path=/home/ligengz/workspace/VILA-main/NVILA-Lite-2B-hf-preview
+
+echo "model_name_or_path = $model_name_or_path"
 
 torchrun \
     --nnodes=$NNODES --nproc_per_node=$GPUS_PER_NODE --node_rank=$NODE_RANK \

@@ -344,6 +344,7 @@ class Qwen2VLGRPOTrainer(Trainer):
     def _get_per_token_logps(self, model, input_ids, attention_mask, pixel_values=None, image_grid_thw=None, media=None, media_config=None, **kwargs):
         if media is not None and media_config is not None:
             # NVILA case
+            print(f"[DEBUG5] token: {self.processing_class.batch_decode(input_ids)} media: {len(media['image'])}")
             logits = model(input_ids, attention_mask=attention_mask, media=media, media_config=media_config).logits  # (B, L, V)
         else:
             logits = model(input_ids, attention_mask=attention_mask, pixel_values=pixel_values, image_grid_thw=image_grid_thw).logits  # (B, L, V)
@@ -368,7 +369,7 @@ class Qwen2VLGRPOTrainer(Trainer):
             raise ValueError("The GRPOTrainer does not support returning outputs")
 
         prompts = [x["prompt"] for x in inputs]
-        prompts_text = [maybe_apply_chat_template(example, self.processing_class)["prompt"] for example in inputs]
+        # prompts_text = [maybe_apply_chat_template(example, self.processing_class)["prompt"] for example in inputs]
         images = [x["image"] for x in inputs]
         # TODO(ligeng): sync with Qwen Processor
         # print(f"[DEBUG2] {len(images)=}, {inputs=} {prompts_text=} {images=}", flush=True)
@@ -390,8 +391,10 @@ class Qwen2VLGRPOTrainer(Trainer):
                     single_conv.append(text)
                 all_convs.append(single_conv)
             
-            # print(f"[DEBUG3] vila apply_chat_template: {all_convs=}")
+            print(f"[DEBUG3] vila {inputs=} apply_chat_template: {all_convs=}")
             prompt_inputs = self.processing_class(all_convs)
+            print(f"[DEBUG3.5] vila prompt_inputs_ids: {self.processing_class.batch_decode(prompt_inputs['input_ids'])}")
+            # exit(0)
             prompt_inputs["attention_mask"] = torch.ones_like(prompt_inputs.input_ids, dtype=torch.bool)
 
             # TODO(ligeng): why vila input does not work with __prepare_input()
@@ -407,6 +410,7 @@ class Qwen2VLGRPOTrainer(Trainer):
                 prompt_inputs.media["image"] = [move_data_to_device(img) for img in prompt_inputs.media["image"]]
             # video is not supported yet        
         else:
+            prompts_text = [maybe_apply_chat_template(example, self.processing_class)["prompt"] for example in inputs]
             prompt_inputs = self.processing_class(
                 text=prompts_text,
                 images=images,
@@ -438,6 +442,8 @@ class Qwen2VLGRPOTrainer(Trainer):
 
         # NOTE(ligeng): Inference tensors cannot be saved for backward. To work around you can make a clone to get a normal tensor and use it in autograd.
         prompt_completion_ids = prompt_completion_ids.clone()
+        print(f"[DEBUG3.6] vila prompt_completion_ids: {self.processing_class.batch_decode(prompt_completion_ids, skip_special_tokens=True)}")
+        exit(0)
 
         # Mask everything after the first EOS token
         is_eos = completion_ids == self.processing_class.eos_token_id
@@ -456,7 +462,11 @@ class Qwen2VLGRPOTrainer(Trainer):
             pixel_values=pixel_values, image_grid_thw=image_grid_thw, media=media, media_config=media_config
         )
         # Get rid of the prompt (-1 because of the shift done in get_per_token_logps)
-        per_token_logps = per_token_logps[:, prompt_length - 1 :]
+        if "vila" in str(model).lower():
+            # TODO(ligeng): align with qwen, output the prefill token logprobs as well.
+            pass            
+        else:
+            per_token_logps = per_token_logps[:, prompt_length - 1 :]
 
         with torch.inference_mode():
             if self.ref_model is not None:
