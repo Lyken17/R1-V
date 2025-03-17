@@ -14,17 +14,16 @@
 
 import os
 import re
-from datetime import datetime
 from dataclasses import dataclass, field
+from datetime import datetime
 from typing import Optional
 
-from datasets import load_dataset, load_from_disk
+from datasets import load_dataset
 from transformers import Qwen2VLForConditionalGeneration
 
 from math_verify import parse, verify
-from open_r1.trainer import Qwen2VLGRPOTrainer, Qwen2VLGRPOVLLMTrainer, Qwen2VLGRPOVLLMTrainerModified
+from open_r1.trainer import VILAGRPOTrainer, VILAGRPOTrainerNew
 from trl import GRPOConfig, GRPOTrainer, ModelConfig, ScriptArguments, TrlParser, get_peft_config
-
 
 @dataclass
 class GRPOScriptArguments(ScriptArguments):
@@ -48,7 +47,14 @@ class GRPOScriptArguments(ScriptArguments):
         default=3136,
         metadata={"help": "Minimum number of pixels for the image"},
     )
-
+    video_path: Optional[str] = field(
+        default="",
+        metadata={"help": "Path to load video files"},
+    )
+    num_video_frames: Optional[int] = field(
+        default=8,
+        metadata={"help": "Path to load video files"},
+    )
 
 def accuracy_reward(completions, solution, **kwargs):
     """Reward function that checks if the completion is correct using either symbolic verification or exact string matching."""
@@ -69,24 +75,26 @@ def accuracy_reward(completions, solution, **kwargs):
         if reward == 0.0:
             try:
                 # Extract answer from solution if it has think/answer tags
-                sol_match = re.search(r'<answer>(.*?)</answer>', sol)
+                sol_match = re.search(r"<answer>(.*?)</answer>", sol)
                 ground_truth = sol_match.group(1).strip() if sol_match else sol.strip()
-                
+
                 # Extract answer from content if it has think/answer tags
-                content_match = re.search(r'<answer>(.*?)</answer>', content)
+                if "Therefore the final answer is:" in content:
+                    content_match = re.search(r"<answer>Therefore the final answer is: (.*?)</answer>", content)
+                else:
+                    content_match = re.search(r"<answer>(.*?)</answer>", content)
                 student_answer = content_match.group(1).strip() if content_match else content.strip()
-                
+
                 # Compare the extracted answers
                 if student_answer == ground_truth:
                     reward = 1.0
             except Exception:
                 pass  # Keep reward as 0.0 if both methods fail
-                
+
         rewards.append(reward)
         if os.getenv("DEBUG_MODE") == "true":
             log_path = os.getenv("LOG_PATH")
-            # local_rank = int(os.getenv("LOCAL_RANK", 0))
-            with open(log_path, "a", encoding="utf-8") as f:
+            with open(log_path, "a") as f:
                 f.write(f"------------- {current_time} Accuracy reward: {reward} -------------\n")
                 f.write(f"Content: {content}\n")
                 f.write(f"Solution: {sol}\n")
@@ -97,9 +105,19 @@ def format_reward(completions, **kwargs):
     """Reward function that checks if the completion has a specific format."""
     pattern = r"<think>.*?</think>\s*<answer>.*?</answer>"
     completion_contents = [completion[0]["content"] for completion in completions]
-    matches = [re.fullmatch(pattern, content, re.DOTALL) for content in completion_contents]
+    matches = [re.match(pattern, content, re.DOTALL) for content in completion_contents]
     return [1.0 if match else 0.0 for match in matches]
 
+def judge_dir(resume_dir):
+    is_checkpoint_dir = False
+    if os.path.exists(resume_dir) == False:
+        return False
+    for _dir in os.listdir(resume_dir):
+        if "checkpoint" in _dir:
+            is_checkpoint_dir = True
+        if "pth" in _dir:
+            is_checkpoint_dir = True
+    return is_checkpoint_dir
 
 reward_funcs_registry = {
     "accuracy": accuracy_reward,
@@ -121,7 +139,6 @@ def main(script_args, training_args, model_args):
     # Load the dataset
     dataset = load_dataset(script_args.dataset_name, name=script_args.dataset_config)
 
-
     # Format into conversation
     def make_conversation(example):
         return {
@@ -131,22 +148,9 @@ def main(script_args, training_args, model_args):
             ],
         }
 
-    # def make_conversation_image(example):
-    #     return {
-    #         "prompt": [
-    #             {"role": "system", "content": [{"type": "text", "text": SYSTEM_PROMPT}]},
-    #             {
-    #                 "role": "user",
-    #                 "content": [
-    #                     {"type": "image"},
-    #                     {"type": "text", "text": example["problem"]},
-    #                 ],
-    #             },
-    #         ],
-    #     }
-
     QUESTION_TEMPLATE = "{Question}  Output the thinking process in <think> </think> and final answer (number) in <answer> </answer> tags."
-
+    QUESTION_TEMPLATE_IMAGE = "You are a helpful assistant. The user asks a question, and then you solves it.\n\nPlease first think about the reasoning process in the mind based on the given image, and then provide the user with the answer. The reasoning process and answer are enclosed within <think> </think> and <answer> </answer> tags, respectively, i.e., <think> reasoning process here </think><answer> only number here </answer>\n\n Question: {Question}"
+    QUESTION_TEMPLATE_VIDEO = "You are a helpful assistant. The user asks a question, and then you solves it.\n\nPlease first think deeply about the question based on the given video, and then provide the final answer. The reasoning process and answer are enclosed within <think> </think> and <answer> </answer> tags, respectively, i.e., <think> reasoning process here </think> <answer> answer here </answer>.\n\n Question: {Question}"
     def make_conversation_image(example):
         return {
             "prompt": [
@@ -154,26 +158,34 @@ def main(script_args, training_args, model_args):
                     "role": "user",
                     "content": [
                         {"type": "image"},
-                        {"type": "text", "text": QUESTION_TEMPLATE.format(Question=example["problem"])},
+                        {"type": "text", "text": QUESTION_TEMPLATE_IMAGE.format(Question=example["problem"])},
                     ],
                 },
             ],
         }
 
+    def make_conversation_video(example):
+        return {
+            "prompt": [
+                {
+                    "role": "user",
+                    "content": [
+                        {"type": "video"},
+                        {"type": "text", "text": QUESTION_TEMPLATE_VIDEO.format(Question=example["problem"])},
+                    ],
+                },
+            ],
+        }
 
     if "image" in dataset[script_args.dataset_train_split].features:
-        print("has image in dataset")
         dataset = dataset.map(make_conversation_image)  # Utilize multiprocessing for faster mapping
-        # dataset = dataset.remove_columns(["original_question", "original_answer"])
-
+    elif "video_filename" in dataset[script_args.dataset_train_split].features:
+        dataset = dataset.map(make_conversation_video)  # Utilize multiprocessing for faster mapping
     else:
-        print("no image in dataset")
         dataset = dataset.map(make_conversation)
         dataset = dataset.remove_columns("messages")
 
-    
-    trainer_cls = Qwen2VLGRPOTrainer if not training_args.use_vllm else Qwen2VLGRPOVLLMTrainerModified
-    print("using: ", trainer_cls)
+    trainer_cls = VILAGRPOTrainerNew
 
     # Initialize the GRPO trainer
     trainer = trainer_cls(
@@ -186,10 +198,12 @@ def main(script_args, training_args, model_args):
         attn_implementation=model_args.attn_implementation,
         max_pixels=script_args.max_pixels,
         min_pixels=script_args.min_pixels,
+        video_path=script_args.video_path,
+        num_video_frames=script_args.num_video_frames
     )
 
     # Train and push the model to the Hub
-    trainer.train()
+    trainer.train(resume_from_checkpoint=judge_dir(training_args.output_dir))
 
     # Save and push to hub
     trainer.save_model(training_args.output_dir)
