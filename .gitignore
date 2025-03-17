@@ -1,3 +1,6 @@
 output/
 hostfiles/
 internal_scripts/
+
+**/logs/
+*.txt
