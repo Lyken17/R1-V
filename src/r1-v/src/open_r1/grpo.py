@@ -189,7 +189,7 @@ def main(script_args, training_args, model_args):
     )
 
     # Train and push the model to the Hub
-    trainer.train()
+    trainer.train(resume_from_checkpoint=training_args.resume_from_checkpoint)
 
     # Save and push to hub
     trainer.save_model(training_args.output_dir)

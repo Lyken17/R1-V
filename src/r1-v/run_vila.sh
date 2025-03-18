@@ -74,3 +74,15 @@ torchrun \
     --num_generations 2   # number of outputs G in grpo, reduce it would lead to faster training and smaller memory cost but higher variance  
 
 exit 0 
+
+NNODES=8
+JOB_NAME="Qwen2-VL-2B-GRPO-CLEVR-70k-nodes_${NNODES}"
+srun --account $VILA_SLURM_ACCOUNT --partition $VILA_SLURM_PARTITION \
+    --job-name $VILA_SLURM_ACCOUNT:train/$JOB_NAME \
+    --nodes $NNODES \
+    --gpus-per-node 8 \
+    --time 4:00:00 \
+    --exclusive \
+    --output ./logs/$JOB_NAME/slurm/%J.out \
+    --error ./logs/$JOB_NAME/slurm/%J.err \
+    bash run_vila.sh
