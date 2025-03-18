@@ -379,7 +379,7 @@ class Qwen2VLGRPOTrainer(Trainer):
             raise ValueError("The GRPOTrainer does not support returning outputs")
 
         # print(f"[DEBUG], {inputs=} "); exit(0)
-        prompts = [x["prompt"] for x in inputs]
+        # prompts = [x["prompt"] for x in inputs]
         # prompts_text = [maybe_apply_chat_template(example, self.processing_class)["prompt"] for example in inputs]
         # prompts_text = [self.processing_class.apply_chat_template(example) for example in prompts]
         prompts = []
