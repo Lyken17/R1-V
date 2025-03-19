@@ -188,9 +188,10 @@ def main(script_args, training_args, model_args):
         min_pixels=script_args.min_pixels,
     )
     
-    trainer.model.train()
     # Train and push the model to the Hub
-    trainer.train(resume_from_checkpoint=training_args.resume_from_checkpoint)
+    # TODO: add resume from checkpoint
+    #     trainer.train(resume_from_checkpoint=training_args.resume_from_checkpoint)
+    trainer.train()
 
     # Save and push to hub
     trainer.save_model(training_args.output_dir)

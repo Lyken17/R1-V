@@ -43,8 +43,9 @@ MASTER_PORT=${MASTER_PORT:-$DEFAULT_MASTER_PORT}
 echo "MASTER_PORT = $MASTER_PORT"
 #######################################################################
 
-model_name_or_path=Qwen/Qwen2-VL-2B-Instruct
+# model_name_or_path=Qwen/Qwen2-VL-2B-Instruct
 # model_name_or_path=/home/ligengz/workspace/VILA-main/NVILA-Lite-2B-hf-preview
+model_name_or_path=Efficient-Large-Model/NVILA-Lite-2B-hf-preview-dev
 
 echo "model_name_or_path = $model_name_or_path"
 
