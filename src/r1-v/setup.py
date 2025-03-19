@@ -45,7 +45,7 @@ _deps = [
     "bitsandbytes>=0.43.0",
     "black>=24.4.2",
     "datasets>=3.2.0",
-    "deepspeed==0.15.4",
+    "deepspeed==0.15.3",
     "distilabel[vllm,ray,openai]>=1.5.2",
     "einops>=0.8.0",
     "flake8>=6.0.0",
