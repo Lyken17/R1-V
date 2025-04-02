@@ -2,7 +2,6 @@
 set -e 
 
 
-
 DEFAULT_GPUS_PER_NODE=8
 DEFAULT_MASTER_ADDR="127.0.0.1"
 DEFAULT_MASTER_PORT=25001
@@ -44,8 +43,8 @@ echo "MASTER_PORT = $MASTER_PORT"
 export DEBUG_MODE="true" # Enable Debug if you want to see the rollout of model during RL
 export LOG_PATH="./debug_$SLURM_JOB_NAME.txt"
 
-# model_name_or_path=Qwen/Qwen2-VL-2B-Instruct
-model_name_or_path=/home/ligengz/workspace/VILA-main/NVILA-Lite-2B-hf-preview
+model_name_or_path=Qwen/Qwen2-VL-2B-Instruct
+# model_name_or_path=/home/ligengz/workspace/VILA-main/NVILA-Lite-2B-hf-preview
 # model_name_or_path=Efficient-Large-Model/NVILA-Lite-2B-hf-preview-dev
 
 echo "model_name_or_path = $model_name_or_path"
@@ -73,13 +72,12 @@ torchrun \
     --run_name $SLURM_JOB_NAME \
     --save_steps 100 \
     --save_only_model true \
-    --learning_rate 1e-8 \
     --num_generations 2   # number of outputs G in grpo, reduce it would lead to faster training and smaller memory cost but higher variance  
 
 exit 0 
 
 NNODES=1
-JOB_NAME="VILA-Lite-small-lr-2B-GRPO-CLEVR-70k-nodes_${NNODES}"
+JOB_NAME="Qwen2-VL-new-2B-GRPO-CLEVR-70k-nodes_${NNODES}"
 srun --account $VILA_SLURM_ACCOUNT --partition $VILA_SLURM_PARTITION \
     --job-name $VILA_SLURM_ACCOUNT:train/$JOB_NAME \
     --nodes $NNODES \
@@ -88,4 +86,4 @@ srun --account $VILA_SLURM_ACCOUNT --partition $VILA_SLURM_PARTITION \
     --exclusive \
     --output ./logs/$JOB_NAME/slurm/%J.out \
     --error ./logs/$JOB_NAME/slurm/%J.err \
-    bash run_vila.sh
+    bash run_qwen.sh

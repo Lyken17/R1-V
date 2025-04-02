@@ -84,7 +84,7 @@ def accuracy_reward(completions, solution, **kwargs):
                 
         rewards.append(reward)
         if os.getenv("DEBUG_MODE") == "true":
-            log_path = os.getenv("LOG_PATH")
+            log_path = os.getenv("LOG_PATH", "./debug_log.txt")
             # local_rank = int(os.getenv("LOCAL_RANK", 0))
             with open(log_path, "a", encoding="utf-8") as f:
                 f.write(f"------------- {current_time} Accuracy reward: {reward} -------------\n")
@@ -95,7 +95,8 @@ def accuracy_reward(completions, solution, **kwargs):
 
 def format_reward(completions, **kwargs):
     """Reward function that checks if the completion has a specific format."""
-    pattern = r"<think>.*?</think>\s*<answer>.*?</answer>"
+    # pattern = r"<think>.*?</think>\s*<answer>.*?</answer>"
+    pattern = r"<think>.*?</think>.*<answer>.*?</answer>"
     completion_contents = [completion[0]["content"] for completion in completions]
     matches = [re.fullmatch(pattern, content, re.DOTALL) for content in completion_contents]
     return [1.0 if match else 0.0 for match in matches]
