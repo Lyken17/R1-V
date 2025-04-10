@@ -399,7 +399,9 @@ class Qwen2VLGRPOTrainer(Trainer):
             padding_side="left",
             add_special_tokens=False,
         )
-        if "vila" in self.model.config._name_or_path.lower():
+        # assert "vila" in self.model.config._name_or_path.lower(), f"{self.model.config._name_or_path}"
+        # if "vila" in self.model.config._name_or_path.lower():
+        if "vila" in self.model.config.architectures[0].lower():
             prompt_inputs = self.processing_class.move_data_to_device(self, prompt_inputs)
             # vila does not have the two fields
             prompt_inputs["pixel_values"] = prompt_inputs["image_grid_thw"] = None
