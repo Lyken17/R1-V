@@ -354,7 +354,7 @@ class Qwen2VLGRPOTrainer(Trainer):
         if media is not None and media_config is not None:
             # NVILA case
             # print(f"[DEBUG] token: {self.processing_class.batch_decode(input_ids)} media: {media.keys()} {len(media['image'])}"); # exit(0)
-            logits = model(input_ids, attention_mask=attention_mask, media=media, media_config=media_config).logits  # (B, L, V)
+            logits = model(input_ids, attention_mask=attention_mask, media=media, media_config=media_config, packing=False).logits  # (B, L, V)
         else:
             # print(f"[DEBUG] token: {self.processing_class.batch_decode(input_ids)} pixel_values: {pixel_values.shape}"); exit(0)
             logits = model(input_ids, attention_mask=attention_mask, pixel_values=pixel_values, image_grid_thw=image_grid_thw).logits  # (B, L, V)
@@ -467,6 +467,11 @@ class Qwen2VLGRPOTrainer(Trainer):
         # Compute the KL divergence between the model and the reference model
         per_token_kl = torch.exp(ref_per_token_logps - per_token_logps) - (ref_per_token_logps - per_token_logps) - 1
 
+        # NOTE: suggested by Jinyi 
+        # self._metrics["per_token_kl"] = per_token_kl.float().mean()
+        # self._metrics["per_token_logps"] = per_token_logps.view(-1).sum()
+        # self._metrics["ref_per_token_logps"] = ref_per_token_logps
+
         # Decode the generated completions
         completions = self.processing_class.batch_decode(completion_ids, skip_special_tokens=True)
         if is_conversational(inputs[0]):
@@ -512,6 +517,10 @@ class Qwen2VLGRPOTrainer(Trainer):
         mean_grouped_rewards = mean_grouped_rewards.repeat_interleave(self.num_generations, dim=0)
         std_grouped_rewards = std_grouped_rewards.repeat_interleave(self.num_generations, dim=0)
         advantages = (rewards - mean_grouped_rewards) / (std_grouped_rewards + 1e-4)
+
+        # NOTE: suggested by Jinyi 
+        # self._metrics["rewards_per_func"] = rewards_per_func
+        self._metrics["advantages"].append(advantages)
 
         # x - x.detach() allows for preserving gradients from x
         per_token_loss = torch.exp(per_token_logps - per_token_logps.detach()) * advantages.unsqueeze(1)

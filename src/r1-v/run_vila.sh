@@ -45,8 +45,9 @@ export DEBUG_MODE="true" # Enable Debug if you want to see the rollout of model 
 export LOG_PATH="./debug_$SLURM_JOB_NAME.txt"
 
 # model_name_or_path=Qwen/Qwen2-VL-2B-Instruct
-model_name_or_path=/home/ligengz/workspace/VILA-main/NVILA-Lite-2B-hf-preview
+# model_name_or_path=/home/ligengz/workspace/VILA-main/NVILA-Lite-2B-hf-preview
 # model_name_or_path=Efficient-Large-Model/NVILA-Lite-2B-hf-preview-dev
+model_name_or_path=/home/ligengz/workspace/VILA-main/runs/train/NVILA-Lite-2B-sft-thinking--tabmwp+thinking--chartqa_train_18k/model-hf-preview
 
 echo "model_name_or_path = $model_name_or_path"
 
@@ -79,7 +80,7 @@ torchrun \
 exit 0 
 
 NNODES=1
-JOB_NAME="VILA-Lite-small-lr-2B-GRPO-CLEVR-70k-nodes_${NNODES}"
+JOB_NAME="VILA-Lite-Format-Tuned-small-lr-2B-GRPO-CLEVR-70k-nodes_${NNODES}"
 srun --account $VILA_SLURM_ACCOUNT --partition $VILA_SLURM_PARTITION \
     --job-name $VILA_SLURM_ACCOUNT:train/$JOB_NAME \
     --nodes $NNODES \
