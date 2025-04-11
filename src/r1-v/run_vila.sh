@@ -72,7 +72,7 @@ torchrun \
     --max_pixels 401408 \
     --num_train_epochs 2 \
     --run_name $SLURM_JOB_NAME \
-    --save_steps 100 \
+    --save_steps 10 \
     --save_only_model true \
     --learning_rate 1e-8 \
     --num_generations 2   # number of outputs G in grpo, reduce it would lead to faster training and smaller memory cost but higher variance  
@@ -90,3 +90,4 @@ srun --account $VILA_SLURM_ACCOUNT --partition $VILA_SLURM_PARTITION \
     --output ./logs/$JOB_NAME/slurm/%J.out \
     --error ./logs/$JOB_NAME/slurm/%J.err \
     bash run_vila.sh
+
