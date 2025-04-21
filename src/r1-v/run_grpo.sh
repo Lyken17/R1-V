@@ -4,7 +4,6 @@ export DEBUG_MODE="true"
 export LOG_PATH="./debug_log_2b.txt"
 
 
-
 torchrun --nproc_per_node="8" \
     --nnodes="1" \
     --node_rank="0" \

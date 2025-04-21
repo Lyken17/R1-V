@@ -17,6 +17,7 @@ import textwrap
 from collections import defaultdict
 from typing import Any, Callable, Optional, Union
 
+import json
 import torch
 import torch.utils.data
 import transformers
@@ -40,6 +41,13 @@ from transformers import (
 )
 from transformers.integrations.deepspeed import is_deepspeed_zero3_enabled
 from transformers.utils import is_peft_available
+from transformers.trainer_callback import TrainerState
+
+import dataclasses
+import json
+import math
+from dataclasses import dataclass
+
 
 from trl.data_utils import apply_chat_template, is_conversational, maybe_apply_chat_template
 from trl.models import create_reference_model, prepare_deepspeed, unwrap_model_for_generation
@@ -48,6 +56,22 @@ from trl.trainer.utils import generate_model_card, get_comet_experiment_url
 
 import copy
 
+
+# NOTE(ligeng): why R1-v needs to override the save function for NVILA?
+class TensorEncoder(json.JSONEncoder):
+    def default(self, obj):
+        if isinstance(obj, torch.Tensor):
+            return obj.detach().cpu().tolist()
+        return super().default(obj)
+
+# Monkey patch the TrainerState save_to_json method
+def save_to_json(self, json_path: str):
+    """Save the content of this instance in JSON format inside `json_path`."""
+    json_string = json.dumps(dataclasses.asdict(self), indent=2, sort_keys=True, cls=TensorEncoder) + "\n"
+    with open(json_path, "w", encoding="utf-8") as f:
+        f.write(json_string)
+
+TrainerState.save_to_json = save_to_json
 
 def check_if_rank0():
     if torch.distributed.is_initialized():
