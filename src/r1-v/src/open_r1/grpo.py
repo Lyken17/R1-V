@@ -84,9 +84,9 @@ def accuracy_reward(completions, solution, **kwargs):
                 
         rewards.append(reward)
         if os.getenv("DEBUG_MODE") == "true":
-            log_path = os.getenv("LOG_PATH")
+            log_path = os.getenv("LOG_PATH", "./debug_log.txt")
             # local_rank = int(os.getenv("LOCAL_RANK", 0))
-            with open(log_path, "a") as f:
+            with open(log_path, "a", encoding="utf-8") as f:
                 f.write(f"------------- {current_time} Accuracy reward: {reward} -------------\n")
                 f.write(f"Content: {content}\n")
                 f.write(f"Solution: {sol}\n")
@@ -95,7 +95,9 @@ def accuracy_reward(completions, solution, **kwargs):
 
 def format_reward(completions, **kwargs):
     """Reward function that checks if the completion has a specific format."""
-    pattern = r"<think>.*?</think>\s*<answer>.*?</answer>"
+    # pattern = r"<think>.*?</think>\s*<answer>.*?</answer>"
+    # allow spaces btw </think> <answer>
+    pattern = r"<think>.*?</think>.*<answer>.*?</answer>"
     completion_contents = [completion[0]["content"] for completion in completions]
     matches = [re.fullmatch(pattern, content, re.DOTALL) for content in completion_contents]
     return [1.0 if match else 0.0 for match in matches]
@@ -121,7 +123,6 @@ def main(script_args, training_args, model_args):
     # Load the dataset
     dataset = load_dataset(script_args.dataset_name, name=script_args.dataset_config)
 
-
     # Format into conversation
     def make_conversation(example):
         return {
@@ -145,7 +146,7 @@ def main(script_args, training_args, model_args):
     #         ],
     #     }
 
-    QUESTION_TEMPLATE = "{Question}  Output the thinking process in <think> </think> and final answer (number) in <answer> </answer> tags."
+    QUESTION_TEMPLATE = "{Question} Output the thinking process in <think> </think> and final answer (number) in <answer> </answer> tags."
 
     def make_conversation_image(example):
         return {
@@ -187,8 +188,10 @@ def main(script_args, training_args, model_args):
         max_pixels=script_args.max_pixels,
         min_pixels=script_args.min_pixels,
     )
-
+    
     # Train and push the model to the Hub
+    # TODO: add resume from checkpoint
+    #     trainer.train(resume_from_checkpoint=training_args.resume_from_checkpoint)
     trainer.train()
 
     # Save and push to hub

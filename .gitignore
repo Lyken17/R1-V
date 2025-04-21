@@ -1,3 +1,7 @@
 output/
 hostfiles/
 internal_scripts/
+
+**/logs/
+*.txt
+src/r1-v/runs/*
